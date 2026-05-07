@@ -168,6 +168,13 @@ node bot.js
 
 ## ⚙️ Конфигурация
 
+### Полезные ссылки API и документации
+
+- Документация API LZT Market: https://lzt-market.readme.io/reference/information
+- Документация API LolzTeam: https://lolzteam.readme.io/reference/information
+- Репозиторий с примером парсера/документации: https://github.com/AS7RIDENIED/LOLZTEAM
+- Оригинальный `market.json`: https://raw.githubusercontent.com/AS7RIDENIED/LOLZTEAM/main/Official%20Documentation/market.json
+
 ### config.json параметры
 
 ```json
@@ -252,6 +259,7 @@ node bot.js
 - API документация: https://lzt-market.readme.io/
 - Правила маркета: https://lzt.market/rules
 - Гайд от куратора: https://lolz.live/threads/7421809/
+- Второй гайд: https://lolz.live/threads/9679111/
 
 ## 📝 Лицензия
 

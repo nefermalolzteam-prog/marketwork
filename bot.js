@@ -117,6 +117,10 @@ function validateConfig(config) {
     throw new Error('Ошибка: token не задан в config.json. Заполните поле token.');
   }
 
+  if (!isAsciiString(config.token)) {
+    throw new Error('Ошибка: token содержит недопустимые символы. Убедитесь, что в config.json используется корректный токен без кириллицы и пробелов.');
+  }
+
   if (!config.apiBaseUrl || typeof config.apiBaseUrl !== 'string') {
     throw new Error('Ошибка: apiBaseUrl должен быть указан в config.json.');
   }
@@ -193,6 +197,10 @@ function loadRules() {
 
 function normalizeText(text) {
   return String(text || '').trim().toLowerCase();
+}
+
+function isAsciiString(value) {
+  return /^[\x00-\x7F]*$/.test(String(value || ''));
 }
 
 function getItemId(item) {
@@ -283,6 +291,10 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
 
       return response.json();
     } catch (error) {
+      if (error instanceof TypeError && String(error.message).includes('ByteString')) {
+        logError(`Ошибка запроса: ${url} — некорректный заголовок Authorization или токен содержит не-ASCII символы.`);
+        throw new Error('Некорректный токен или заголовок Authorization: проверьте token в config.json.');
+      }
       const transient = ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'].includes(error.code);
       if (transient && attempt <= maxRetries) {
         const wait = baseDelay * Math.pow(2, attempt - 1);
