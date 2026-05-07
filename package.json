@@ -1,0 +1,35 @@
+{
+  "name": "lzt-market-bot",
+  "version": "2.2.0",
+  "description": "Профессиональный бот для поиска объявлений и проверки правил на LZT Market: 7 режимов поиска, проверка происхождения, обнаружение нарушений. ES Modules, Node.js 18+",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "check-syntax": "node --check bot.js && node --check test/bot.test.js && node --check inspect_paths.js",
+    "lint": "npm run check-syntax",
+    "test": "node test/bot.test.js",
+    "test:watch": "node --watch test/bot.test.js"
+  },
+  "keywords": [
+    "lzt-market",
+    "account-trading",
+    "rules-checker",
+    "origin-detector",
+    "personal-accounts",
+    "api-bot",
+    "nodejs",
+    "es-modules",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/lzt-market-bot"
+  }
+}
