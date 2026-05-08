@@ -61,6 +61,9 @@ function run() {
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлежка 3 месяца', 'отлежка'), true, 'Должен найти "3 месяца"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('есть отлежка', 'отлежка'), false, 'Не должен найти дату в "есть отлежка"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 2 года', 'отлега'), true, 'Должен найти "2 года"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 month', 'inactive'), true, 'Должен найти "1 month"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('2025 | Пробный режим Reels | 2FA|  Отлега 120 дней| 500 sab |  OLD', 'отлега'), true, 'Должен найти "120 дней" с разделителем "|"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('+1 США [авторег] | Любой вход | Не использован | Отлёжка месяц (30+ дней)', 'отлёжка'), true, 'Должен найти "30+ дней" внутри скобок');
 
   console.log('Все тесты пройдены.');
 }

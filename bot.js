@@ -320,12 +320,12 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
 function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
   // Упрощенная логика: если в тексте есть паттерн даты/периода, считаем отлежку явной
   const dateOrAgePatterns = [
-    /\b\d{1,2}\s*(?:янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)/iu,
-    /(?:^|\s)\d+\+?\s*(?:day|days|d|дн|дн\.|день|дня|дни|дней|недел|нед|нед\.|месяц|месяца|месяцев|год|года|лет|час|часа|часов|минут|минуты|мин)(?=\s|$|[.,!?:;])/iu,
+    /\b\d{1,2}\s*(?:янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\b/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*(?:day|days|month|months|d|дн(?:\.|я|ей)?|день|дня|дни|дней|недел(?:я|ь|и)?|нед(?:\.|еля|ели)?|месяц(?:а|ев)?|год(?:а|ов)?|лет|час(?:а|ов)?|минут(?:а|ы)?|мин)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
     /\b\d+\s*[-\/\.]\s*\d+\b/
   ];
 
-  return dateOrAgePatterns.some(re => re.test(textLower));
+  return dateOrAgePatterns.some((re) => re.test(textLower));
 }
 
 function checkViolations(text, rules) {
@@ -442,18 +442,23 @@ async function searchOnce(config, rules, page = 1) {
   }
 
   // Добавляем категорию как параметр, если она указана
-  if (config.category) {
-    params.append('category[]', String(config.category));
-  }
+  const buildUrl = (usePath) => {
+    const requestParams = new URLSearchParams(params);
+    if (config.category) {
+      if (usePath && categoryPath) {
+        requestParams.append('category[]', String(config.category));
+      } else {
+        requestParams.append('category', String(config.category));
+      }
+    }
+
+    if (usePath && categoryPath) {
+      return `${baseUrl}/${categoryPath}?${requestParams}`;
+    }
+    return `${baseUrl}/?${requestParams}`;
+  };
 
   const categoryPath = CATEGORY_PATHS[String(config.category)];
-
-  const buildUrl = (usePath) => {
-    if (usePath && categoryPath) {
-      return `${baseUrl}/${categoryPath}?${params}`;
-    }
-    return `${baseUrl}/?${params}`;
-  };
 
   let data;
   try {
@@ -913,7 +918,7 @@ async function checkAllCategories(config, rules, ask) {
     }
   }
 
-  await displayViolationsOnly(totalResults, 200, ask);
+  await displayViolationsOnly(totalResults, config.resultsPerPage || 200, ask);
 
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📊 ИТОГО: ${totalResults.length} объявлений проверено, ${totalViolations} с нарушениями`);
@@ -1080,6 +1085,17 @@ async function runBot() {
 
   const ask = (question) => new Promise((resolve) => rl.question(question, resolve));
 
+  // Карты для выбора режима и сортировки
+  const modeMap = {
+    '1': 'search', '2': 'auto-check', '3': 'check-categories', '4': 'check-origins',
+    '5': 'fake-personal', '6': 'telegram-years', '7': 'socialclub-search'
+  };
+  const orderByMap = {
+    '1': 'pdate_to_down', '2': 'pdate_to_up', '3': 'price_to_up', '4': 'price_to_down',
+    '5': 'pdate_to_down_upload', '6': 'pdate_to_up_upload', '7': 'edate_to_up', '8': 'edate_to_down'
+  };
+  const fixedSortingModes = new Set(['check-origins', 'fake-personal', 'telegram-years', 'socialclub-search']);
+
   // Главный цикл для перезапуска бота
   let continueLoop = true;
   while (continueLoop) {
@@ -1095,30 +1111,16 @@ async function runBot() {
     console.log('7. Поиск Social Club в Steam и Epic');
     const modeChoice = await ask('Введите номер режима (1-7): ');
 
-    let mode;
-    if (modeChoice === '1') {
-      mode = 'search';
-    } else if (modeChoice === '2') {
-      mode = 'auto-check';
-    } else if (modeChoice === '3') {
-      mode = 'check-categories';
-    } else if (modeChoice === '4') {
-      mode = 'check-origins';
-    } else if (modeChoice === '5') {
-      mode = 'fake-personal';
-    } else if (modeChoice === '6') {
-      mode = 'telegram-years';
-    } else if (modeChoice === '7') {
-      mode = 'socialclub-search';
-    } else {
+    const mode = modeMap[modeChoice];
+    if (!mode) {
       console.log('❌ Неверный выбор. Выход.');
       rl.close();
       return;
     }
 
-    // Пропускаем выбор сортировки для режимов 4, 5, 6, 7 (фиксированные настройки)
+    // Выбор сортировки
     let orderByChoice;
-    if (['check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'].includes(mode)) {
+    if (fixedSortingModes.has(mode)) {
       orderByChoice = '1'; // Новые сначала
     } else {
       console.log('\nВыберите сортировку результатов:');
@@ -1133,24 +1135,8 @@ async function runBot() {
       orderByChoice = await ask('Введите номер сортировки (1-8): ');
     }
 
-    let orderBy;
-    if (orderByChoice === '1') {
-      orderBy = 'pdate_to_down';
-    } else if (orderByChoice === '2') {
-      orderBy = 'pdate_to_up';
-    } else if (orderByChoice === '3') {
-      orderBy = 'price_to_up';
-    } else if (orderByChoice === '4') {
-      orderBy = 'price_to_down';
-    } else if (orderByChoice === '5') {
-      orderBy = 'pdate_to_down_upload';
-    } else if (orderByChoice === '6') {
-      orderBy = 'pdate_to_up_upload';
-    } else if (orderByChoice === '7') {
-      orderBy = 'edate_to_up';
-    } else if (orderByChoice === '8') {
-      orderBy = 'edate_to_down';
-    } else {
+    const orderBy = orderByMap[orderByChoice];
+    if (!orderBy) {
       console.log('❌ Неверный выбор сортировки. Выход.');
       rl.close();
       return;
@@ -1167,61 +1153,45 @@ async function runBot() {
       }
     }
 
-    // Ввод списка категорий для режима проверки разделов
+    // Выбор категорий
+    const cats = config.categories || {};
     let categories = [];
-    if (mode === 'check-categories') {
-      console.log('Доступные категории:');
-      const cats = config.categories || {};
-      Object.entries(cats).forEach(([id, name]) => {
-        console.log(`${id}. ${name}`);
-      });
-      console.log('all. Все категории');
-      console.log('custom. Ввести свои ID через запятую');
-      
-      const catChoice = await ask('Выберите категории (номера через запятую, all или custom): ');
-      
-      if (catChoice.toLowerCase() === 'all') {
-        categories = Object.keys(cats);
-      } else if (catChoice.toLowerCase() === 'custom') {
-        const customCats = await ask('Введите ID категорий через запятую: ');
-        categories = customCats.split(',').map(c => c.trim()).filter(c => c);
-      } else {
-        categories = catChoice.split(',').map(c => c.trim()).filter(c => c);
-        // Проверить, что введены числа или ключи из списка
-        categories = categories.map(c => {
-          if (cats[c]) return c; // Если ключ существует
-          if (!isNaN(c)) return c; // Если число
-          return null;
-        }).filter(c => c);
+    
+    const categoryHandlers = {
+      'check-categories': async () => {
+        console.log('Доступные категории:');
+        Object.entries(cats).forEach(([id, name]) => console.log(`${id}. ${name}`));
+        console.log('all. Все категории');
+        console.log('custom. Ввести свои ID через запятую');
+        
+        const catChoice = await ask('Выберите категории (номера через запятую, all или custom): ');
+        if (catChoice.toLowerCase() === 'all') {
+          return Object.keys(cats);
+        } else if (catChoice.toLowerCase() === 'custom') {
+          const customCats = await ask('Введите ID категорий через запятую: ');
+          return customCats.split(',').map(c => c.trim()).filter(c => c);
+        }
+        return catChoice.split(',').map(c => c.trim()).filter(c => cats[c] || !isNaN(c)).filter(c => c);
+      },
+      'check-origins': () => Object.keys(cats),
+      'fake-personal': () => Object.keys(cats),
+      'telegram-years': () => [TELEGRAM_CATEGORY_ID],
+      'socialclub-search': () => ['1', '12'],
+      'default': async () => {
+        console.log('Доступные категории:');
+        Object.entries(cats).forEach(([id, name]) => console.log(`${id}. ${name}`));
+        const categoryInput = await ask('Введите ID категории (или Enter для всех): ');
+        return [categoryInput.trim() || config.category || ''];
       }
-      
-      if (categories.length === 0) {
-        console.log('❌ Не выбраны категории. Выход.');
-        rl.close();
-        return;
-      }
-    } else if (mode === 'check-origins') {
-      // Автоматически выбираем все категории для режима 4
-      const cats = config.categories || {};
-      categories = Object.keys(cats);
-    } else if (mode === 'fake-personal') {
-      // Автоматически выбираем все категории для режима 5
-      const cats = config.categories || {};
-      categories = Object.keys(cats);
-    } else if (mode === 'telegram-years') {
-      categories = [TELEGRAM_CATEGORY_ID];
-    } else if (mode === 'socialclub-search') {
-      categories = ['1', '12'];
-    } else {
-      // Ввод категории для других режимов
-      console.log('Доступные категории:');
-      const cats = config.categories || {};
-      Object.entries(cats).forEach(([id, name]) => {
-        console.log(`${id}. ${name}`);
-      });
-      const categoryInput = await ask('Введите ID категории (или Enter для всех): ');
-      const category = categoryInput.trim() || config.category || '';
-      categories = [category]; // Для совместимости
+    };
+
+    const handler = categoryHandlers[mode] || categoryHandlers['default'];
+    categories = await handler();
+
+    if (categories.length === 0 && mode === 'check-categories') {
+      console.log('❌ Не выбраны категории. Выход.');
+      rl.close();
+      return;
     }
 
     let includeOrigins = [];
@@ -1322,32 +1292,32 @@ async function runBot() {
       },
       'fake-personal': async () => {
         const results = await searchFakePersonal(searchConfig, rules, ask);
-        await displayResults(results, 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       },
       'check-origins': async () => {
         const results = await checkAllOrigins(searchConfig, rules, ask);
-        await displayResults(results, 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       },
       'socialclub-search': async () => {
         const results = await searchSocialClubAccounts(searchConfig, rules);
-        await displayResults(results, 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       },
       'auto-check': async () => {
         const results = await autoCheckAllListings({...searchConfig, category: categories[0]}, rules);
-        await displayViolationsOnly(results, 200, ask);
+        await displayViolationsOnly(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       },
       'telegram-years': async () => {
         const results = await searchTelegramOtlegYears(searchConfig, rules);
-        await displayResults(results, 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       },
       'search': async () => {
         const results = await searchByKeywords(searchConfig, rules);
-        await displayResults(results, 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
         return results;
       }
     };

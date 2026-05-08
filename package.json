@@ -1,6 +1,6 @@
 {
   "name": "lzt-market-bot",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Профессиональный бот для поиска объявлений и проверки правил на LZT Market: 7 режимов поиска, проверка происхождения, обнаружение нарушений. ES Modules, Node.js 18+",
   "private": true,
   "type": "module",
