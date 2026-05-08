@@ -244,10 +244,19 @@ function getOrderByName(orderBy) {
   }
 }
 
-function getOriginName(originCode) {
+function getOriginName(originCode, subOriginCode = null) {
   if (!originCode) return 'неизвестно';
   const originInfo = ACCOUNT_ORIGINS[originCode.toLowerCase()];
-  return originInfo ? originInfo.name : originCode;
+  let name = originInfo ? originInfo.name : originCode;
+  
+  // Если происхождение - перепродажа и есть подтип, добавляем подтип
+  if (originCode.toLowerCase() === 'resale' && subOriginCode) {
+    const subOriginInfo = ACCOUNT_ORIGINS[subOriginCode.toLowerCase()];
+    const subName = subOriginInfo ? subOriginInfo.name : subOriginCode;
+    name = `${name} (${subName})`;
+  }
+  
+  return name;
 }
 
 async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
@@ -392,8 +401,9 @@ function formatItem(item, rules, extraProps = {}) {
   const textToCheck = `${title} ${description}`.trim();
   const violations = checkViolations(textToCheck, rules);
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
+  const subOrigin = item.resale_item_origin || null;
   
-  return { id, title, description, url, violations, origin, ...extraProps };
+  return { id, title, description, url, violations, origin, subOrigin, ...extraProps };
 }
 
 async function searchOnce(config, rules, page = 1) {
@@ -960,10 +970,10 @@ async function displayResults(results, maxDisplay = 200, ask) {
         console.log(`   Раздел: ${item.category}`);
       }
       if (item.checkedOrigin) {
-        const currentOrigin = item.origin ? getOriginName(item.origin) : 'неизвестно';
+        const currentOrigin = item.origin ? getOriginName(item.origin, item.subOrigin) : 'неизвестно';
         console.log(`   Проверка происхождения: ${highlightOrigin(item.checkedOrigin)} (сейчас: ${highlightOrigin(currentOrigin)})`);
       } else if (item.origin) {
-        console.log(`   Происхождение: ${highlightOrigin(getOriginName(item.origin))}`);
+        console.log(`   Происхождение: ${highlightOrigin(getOriginName(item.origin, item.subOrigin))}`);
       }
       console.log(`   Название: ${highlightViolations(item.title, item.violations)}`);
       console.log(`   Ссылка: ${item.url}`);
