@@ -34,7 +34,7 @@
 npm start              # Запустить бот
 npm test               # Запустить все тесты
 npm run check-syntax   # Проверить синтаксис JavaScript
-npm run lint           # Проверить синтаксис всех файлов
+npm run lint           # Проверить синтаксис и прогнать ESLint по файлам .js
 ```
 
 ### Прямой запуск

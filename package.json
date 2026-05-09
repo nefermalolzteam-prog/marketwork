@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node bot.js",
     "check-syntax": "node --check bot.js && node --check test/bot.test.js && node --check inspect_paths.js",
-    "lint": "npm run check-syntax",
+    "lint": "npm run check-syntax && eslint . --ext .js",
     "test": "node test/bot.test.js",
     "test:watch": "node --watch test/bot.test.js"
   },
@@ -25,6 +25,9 @@
   "author": "",
   "license": "MIT",
   "dependencies": {},
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

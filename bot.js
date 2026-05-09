@@ -42,11 +42,11 @@ const CATEGORY_PATHS = {
   '11': 'battlenet',
   '12': 'epicgames',
   '13': 'riot',
-  '14': 'wot-1',
+  '14': 'world-of-tanks',
   '15': 'supercell',
-  '16': 'wotblitz-1',
-  '17': 'mihoyo-1',
-  '18': 'escapefromtarkov',
+  '16': 'wot-blitz',
+  '17': 'mihoyo',
+  '18': 'escape-from-tarkov',
   '19': 'vpn',
   '20': 'tiktok',
   '22': 'discord',
@@ -200,7 +200,7 @@ function normalizeText(text) {
 }
 
 function isAsciiString(value) {
-  return /^[\x00-\x7F]*$/.test(String(value || ''));
+  return String(value || '').split('').every((ch) => ch.charCodeAt(0) <= 0x7f);
 }
 
 function getItemId(item) {
@@ -264,7 +264,7 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
   const baseDelay = Number(retryDelayMs) >= 0 ? retryDelayMs : 500;
   let attempt = 0;
 
-  while (true) {
+  while (attempt <= maxRetries + 1) {
     attempt += 1;
     try {
       const response = await fetch(url, {
@@ -317,12 +317,12 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
   }
 }
 
-function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
+function hasExplicitAgeOrDateNearKeyword(textLower) {
   // Упрощенная логика: если в тексте есть паттерн даты/периода, считаем отлежку явной
   const dateOrAgePatterns = [
     /\b\d{1,2}\s*(?:янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\b/iu,
     /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*(?:day|days|month|months|d|дн(?:\.|я|ей)?|день|дня|дни|дней|недел(?:я|ь|и)?|нед(?:\.|еля|ели)?|месяц(?:а|ев)?|год(?:а|ов)?|лет|час(?:а|ов)?|минут(?:а|ы)?|мин)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /\b\d+\s*[-\/\.]\s*\d+\b/
+    /\b\d+\s*[-/.]\s*\d+\b/
   ];
 
   return dateOrAgePatterns.some((re) => re.test(textLower));
@@ -339,7 +339,7 @@ function checkViolations(text, rules) {
       if (!keyword) continue;
       const keywordLower = normalizeText(keyword);
       if (!textLower.includes(keywordLower)) continue;
-      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(textLower, keywordLower)) continue;
+      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(textLower)) continue;
       foundViolations.push({
         category,
         name: violation.name,
@@ -370,13 +370,7 @@ function highlightOrigin(text) {
   return `\x1b[41m\x1b[37m${text}\x1b[0m`;
 }
 
-function printScrollHint(resultsLength, displayCount) {
-  if (resultsLength > displayCount) {
-    console.log('   ▶ Чтобы пролистать дальше, увеличьте maxPages или resultsPerPage и запустите бота снова.');
-  }
-}
-
-function finalizeResults(results, startTime, showViolationsOnly = false) {
+function finalizeResults(results, startTime) {
   if (results.length === 0) {
     console.log('❌ Результаты не найдены.');
     return;
@@ -442,14 +436,13 @@ async function searchOnce(config, rules, page = 1) {
   }
 
   // Добавляем категорию как параметр, если она указана
+  const categoryPath = CATEGORY_PATHS[String(config.category)];
+  const shouldUsePath = Boolean(categoryPath);
   const buildUrl = (usePath) => {
     const requestParams = new URLSearchParams(params);
-    if (config.category) {
-      if (usePath && categoryPath) {
-        requestParams.append('category[]', String(config.category));
-      } else {
-        requestParams.append('category', String(config.category));
-      }
+
+    if (!usePath && config.category) {
+      requestParams.append('category', String(config.category));
     }
 
     if (usePath && categoryPath) {
@@ -458,14 +451,14 @@ async function searchOnce(config, rules, page = 1) {
     return `${baseUrl}/?${requestParams}`;
   };
 
-  const categoryPath = CATEGORY_PATHS[String(config.category)];
-
   let data;
+  let usedPath = shouldUsePath;
   try {
-    data = await fetchJson(buildUrl(true), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500);
+    data = await fetchJson(buildUrl(usedPath), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500);
   } catch (error) {
-    if (error.message.includes('HTTP 404') && categoryPath) {
+    if (error.message.includes('HTTP 404') && shouldUsePath) {
       console.warn('⚠️  Категория не поддерживается по специализированному пути, пробую общий поиск через root...');
+      usedPath = false;
       data = await fetchJson(buildUrl(false), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500);
     } else {
       throw error;
@@ -478,9 +471,8 @@ async function searchOnce(config, rules, page = 1) {
     return { results: [], rawCount: 0 };
   }
 
-  // Фильтрация по категории, если указана
   let filteredItems = items;
-  if (config.category) {
+  if (config.category && !usedPath) {
     filteredItems = items.filter(item => String(item.category_id || item.category) === String(config.category));
   }
 
@@ -560,8 +552,9 @@ async function displayViolationsOnly(results, maxDisplay = 200, ask) {
   const pageSize = maxDisplay;
   let pageIndex = 0;
   const pageCount = Math.max(1, Math.ceil(problematic.length / pageSize));
+  let pageActive = true;
 
-  while (true) {
+  while (pageActive) {
     const start = pageIndex * pageSize;
     const pageItems = problematic.slice(start, start + pageSize);
 
@@ -613,7 +606,7 @@ async function displayViolationsOnly(results, maxDisplay = 200, ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
       }
     }
-    break;
+    pageActive = false;
   }
 
   console.log();
@@ -964,8 +957,9 @@ async function displayResults(results, maxDisplay = 200, ask) {
   const pageSize = maxDisplay;
   let pageIndex = 0;
   const pageCount = Math.max(1, Math.ceil(results.length / pageSize));
+  let pageActive = true;
 
-  while (true) {
+  while (pageActive) {
     const start = pageIndex * pageSize;
     const pageItems = results.slice(start, start + pageSize);
 
@@ -1025,7 +1019,7 @@ async function displayResults(results, maxDisplay = 200, ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
       }
     }
-    break;
+    pageActive = false;
   }
 
   console.log();
@@ -1135,7 +1129,7 @@ async function runBot() {
       orderByChoice = await ask('Введите номер сортировки (1-8): ');
     }
 
-    const orderBy = orderByMap[orderByChoice];
+    let orderBy = orderByMap[orderByChoice];
     if (!orderBy) {
       console.log('❌ Неверный выбор сортировки. Выход.');
       rl.close();
