@@ -407,7 +407,7 @@ function formatItem(item, rules, extraProps = {}) {
   const title = item.title || item.name || 'Без названия';
   const description = item.description || item.desc || item.text || '';
   const url = `https://lzt.market/${id}`;
-  const sellerLogin = item.seller_login || item.seller || item.login || 'неизвестно';
+  const sellerLogin = item.seller?.username || item.seller_login || item.seller || item.login || 'неизвестно';
 
   const violations = findViolations(title, description, rules);
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
@@ -1226,7 +1226,7 @@ async function runBot() {
     if (['fake-personal', 'telegram-years', 'socialclub-search', 'check-origins'].includes(mode)) {
       maxPages = 1; // Фиксированное значение для режимов 4, 5, 6, 7
     } else {
-      const maxPagesInput = await ask('Введите максимальное количество страниц (Enter для значения из config, по умолчанию 20): ');
+      const maxPagesInput = await ask('Введите максимальное количество страниц (Enter для значения из config, по умолчанию 1000): ');
       maxPages = parseInt(maxPagesInput) || config.maxPages || 20;
     }
 
@@ -1336,7 +1336,7 @@ async function runBot() {
       },
       'search': async () => {
         const results = await searchByKeywords(searchConfig, rules);
-        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
+        await displayViolationsOnly(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       }
     };

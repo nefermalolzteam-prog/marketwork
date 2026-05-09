@@ -17,7 +17,7 @@
   "order_by": "pdate_to_down",
   "deduplicateResults": false,
   "_comment_deduplicateResults": "false = полный подсчет страниц, true = убрать повторы по ID между страницами",
-  "maxPages": 20,
+  "maxPages": 1000,
   "_comment_maxPages": "Максимум страниц (20-100 для поиска, 1-5 для режимов с происхождением)",
   "resultsPerPage": 1000,
   "_comment_resultsPerPage": "Результатов на страницу (максимум 1000; режимы 4-7 используют 1000)",
