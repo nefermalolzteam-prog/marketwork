@@ -1135,7 +1135,7 @@ async function runBot() {
       orderByChoice = await ask('Введите номер сортировки (1-8): ');
     }
 
-    const orderBy = orderByMap[orderByChoice];
+    let orderBy = orderByMap[orderByChoice];
     if (!orderBy) {
       console.log('❌ Неверный выбор сортировки. Выход.');
       rl.close();
