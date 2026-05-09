@@ -129,8 +129,8 @@ function validateConfig(config) {
     throw new Error(`Ошибка: order_by должен быть одним из ${[...allowedOrders].join(', ')}.`);
   }
 
-  if (!Number.isInteger(config.resultsPerPage) || config.resultsPerPage <= 0 || config.resultsPerPage > 400) {
-    throw new Error('Ошибка: resultsPerPage должен быть числом от 1 до 400.');
+  if (!Number.isInteger(config.resultsPerPage) || config.resultsPerPage <= 0 || config.resultsPerPage > 1000) {
+    throw new Error('Ошибка: resultsPerPage должен быть числом от 1 до 1000.');
   }
 
   if (!Number.isInteger(config.maxPages) || config.maxPages <= 0) {
@@ -391,13 +391,17 @@ function formatItem(item, rules, extraProps = {}) {
   const title = item.title || item.name || 'Без названия';
   const description = item.description || item.desc || item.text || '';
   const url = `https://lzt.market/${id}`;
+  const sellerLogin = item.seller_login || item.seller || item.login || 'неизвестно';
 
   const textToCheck = `${title} ${description}`.trim();
   const violations = checkViolations(textToCheck, rules);
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
   const subOrigin = item.resale_item_origin || null;
   
-  return { id, title, description, url, violations, origin, subOrigin, ...extraProps };
+  // Исключаем объявления с "почта авторег"
+  const hasAutoregEmail = normalizeText(textToCheck).includes('почта авторег');
+  
+  return { id, title, description, url, violations, origin, subOrigin, sellerLogin, hasAutoregEmail, ...extraProps };
 }
 
 async function searchOnce(config, rules, page = 1) {
@@ -476,7 +480,7 @@ async function searchOnce(config, rules, page = 1) {
     filteredItems = items.filter(item => String(item.category_id || item.category) === String(config.category));
   }
 
-  const parsed = filteredItems.map(item => formatItem(item, rules));
+  const parsed = filteredItems.map(item => formatItem(item, rules)).filter(item => !item.hasAutoregEmail);
   return { results: parsed, rawCount: items.length };
 }
 
@@ -535,12 +539,13 @@ async function collectPages(config, rules, itemLabel = 'Поиск') {
   return allResults;
 }
 
-async function displayViolationsOnly(results, maxDisplay = 200, ask) {
+async function displayViolationsOnly(results, maxDisplay = 1000, ask) {
   const problematic = results.filter(item => item.violations.length > 0);
 
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📅 [${new Date().toLocaleString()}] Нарушения`);
   console.log(`📊 Найдено объявлений с нарушениями: ${problematic.length}`);
+  console.log(`📄 На странице показано: ${maxDisplay}`);
   console.log(`${'='.repeat(80)}`);
 
   if (problematic.length === 0) {
@@ -565,6 +570,7 @@ async function displayViolationsOnly(results, maxDisplay = 200, ask) {
         console.log(`   Раздел: ${item.category}`);
       }
       console.log(`   Название: ${highlightViolations(item.title, item.violations)}`);
+      console.log(`   Продавец: ${item.sellerLogin}`);
       console.log(`   Ссылка: ${item.url}`);
       console.log(`   ⚠️  Нарушения:`);
       item.violations.forEach(v => {
@@ -574,7 +580,7 @@ async function displayViolationsOnly(results, maxDisplay = 200, ask) {
     });
 
     if (pageCount > 1) {
-      console.log(`\n⚠️  Показано ${pageItems.length} из ${problematic.length} объявлений с нарушениями. Страница ${pageIndex + 1}/${pageCount}.`);
+      console.log(`\n⚠️  Показано ${pageItems.length} из ${problematic.length} объявлений (страница ${pageIndex + 1}/${pageCount}).`);
       if (!ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
         break;
@@ -601,7 +607,7 @@ async function displayViolationsOnly(results, maxDisplay = 200, ask) {
     }
 
     if (problematic.length > pageSize) {
-      console.log(`\n⚠️  Показано ${pageItems.length} из ${problematic.length} объявлений с нарушениями.`);
+      console.log(`\n⚠️  Показано ${pageItems.length} из ${problematic.length} объявлений на странице.`);
       if (!ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
       }
@@ -653,7 +659,7 @@ async function searchFakePersonal(config, rules, ask) {
   console.log('(это показывает объявления с "личный" в названии, где фактическое происхождение не личный)');
   console.log(`Сортировка: ${getOrderByName(config.order_by)}`);
   console.log(`Максимум страниц на категорию: ${config.maxPages || 1}`);
-  console.log(`Результатов на страницу: ${config.resultsPerPage || 100}`);
+  console.log(`Результатов на страницу: ${config.resultsPerPage || 1000}`);
   console.log(`Задержка между страницами: ${config.pageDelayMs ?? 1000} мс`);
   console.log(`Задержка между категориями: ${config.categoryDelayMs ?? 2000} мс\n`);
 
@@ -694,7 +700,7 @@ async function searchFakePersonal(config, rules, ask) {
     }
   }
 
-  await displayResults(totalResults, 200, ask);
+  await displayResults(totalResults, 1000, ask);
 
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📊 ИТОГО: ${totalResults.length} объявлений проверено`);
@@ -708,7 +714,7 @@ async function checkAllOrigins(config, rules, ask) {
   console.log('Описание: отображение товаров, где название содержит происхождение, а фактическое происхождение отличается. Основные правила нарушений не учитываются.');
   console.log(`Сортировка: ${getOrderByName(config.order_by)}`);
   console.log(`Максимум страниц на категорию: ${config.maxPages || 1}`);
-  console.log(`Результатов на страницу: ${config.resultsPerPage || 100}`);
+  console.log(`Результатов на страницу: ${config.resultsPerPage || 1000}`);
   console.log(`Задержка между страницами: ${config.pageDelayMs ?? 1000} мс`);
   console.log(`Задержка между категориями: ${config.categoryDelayMs ?? 2000} мс\n`);
 
@@ -765,7 +771,7 @@ async function checkAllOrigins(config, rules, ask) {
     }
   }
 
-  await displayResults(totalResults, 200, ask);
+  await displayResults(totalResults, 1000, ask);
 
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📊 ИТОГО: ${totalResults.length} объявлений найдено по несовпадению происхождения и названия`);
@@ -874,7 +880,7 @@ async function checkAllCategories(config, rules, ask) {
   console.log(`Категории: ${catNames}`);
   console.log(`Сортировка: ${getOrderByName(config.order_by)}`);
   console.log(`Максимум страниц на категорию: ${config.maxPages || 1}`);
-  console.log(`Результатов на страницу: ${config.resultsPerPage || 200}`);
+  console.log(`Результатов на страницу: ${config.resultsPerPage || 1000}`);
   console.log(`Задержка между страницами: ${config.pageDelayMs ?? 1000} мс`);
   console.log(`Задержка между категориями: ${config.categoryDelayMs ?? 2000} мс\n`);
 
@@ -911,7 +917,7 @@ async function checkAllCategories(config, rules, ask) {
     }
   }
 
-  await displayViolationsOnly(totalResults, config.resultsPerPage || 200, ask);
+  await displayViolationsOnly(totalResults, config.resultsPerPage || 1000, ask);
 
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📊 ИТОГО: ${totalResults.length} объявлений проверено, ${totalViolations} с нарушениями`);
@@ -942,10 +948,11 @@ async function autoCheckAllListings(config, rules) {
   return results;
 }
 
-async function displayResults(results, maxDisplay = 200, ask) {
+async function displayResults(results, maxDisplay = 1000, ask) {
   console.log(`\n${'='.repeat(80)}`);
   console.log(`📅 [${new Date().toLocaleString()}] Результаты поиска`);
   console.log(`📊 Найдено объявлений: ${results.length}`);
+  console.log(`📄 На странице показано: ${maxDisplay}`);
   console.log(`${'='.repeat(80)}`);
   logInfo(`Результаты поиска: найдено ${results.length} объявлений, режим=${currentMode}`);
   
@@ -975,6 +982,7 @@ async function displayResults(results, maxDisplay = 200, ask) {
         console.log(`   Происхождение: ${highlightOrigin(getOriginName(item.origin, item.subOrigin))}`);
       }
       console.log(`   Название: ${highlightViolations(item.title, item.violations)}`);
+      console.log(`   Продавец: ${item.sellerLogin}`);
       console.log(`   Ссылка: ${item.url}`);
       
       if (item.violations.length > 0) {
@@ -987,7 +995,7 @@ async function displayResults(results, maxDisplay = 200, ask) {
     });
 
     if (pageCount > 1) {
-      console.log(`\n⚠️  Показано ${pageItems.length} из ${results.length} объявлений. Страница ${pageIndex + 1}/${pageCount}.`);
+      console.log(`\n⚠️  Показано ${pageItems.length} из ${results.length} объявлений (страница ${pageIndex + 1}/${pageCount}).`);
       if (!ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
         break;
@@ -1014,7 +1022,7 @@ async function displayResults(results, maxDisplay = 200, ask) {
     }
 
     if (results.length > pageSize) {
-      console.log(`\n⚠️  Показано ${pageItems.length} из ${results.length} объявлений.`);
+      console.log(`\n⚠️  Показано ${pageItems.length} из ${results.length} объявлений на странице.`);
       if (!ask) {
         console.log('   ▶ Введите next для следующей страницы, prev для предыдущей страницы.');
       }
@@ -1208,12 +1216,12 @@ async function runBot() {
     // Ввод результатов на страницу
     let resultsPerPage;
     if (mode === 'check-origins') {
-      resultsPerPage = 400; // Фиксированное значение для режима 4
+      resultsPerPage = 1000; // Фиксированное значение для режима 4
     } else if (['fake-personal', 'telegram-years', 'socialclub-search'].includes(mode)) {
-      resultsPerPage = 200; // Фиксированное значение для режимов 5, 6, 7
+      resultsPerPage = 1000; // Фиксированное значение для режимов 5, 6, 7
     } else {
-      const resultsPerPageInput = await ask('Введите результатов на страницу (Enter для значения из config, по умолчанию 200): ');
-      resultsPerPage = parseInt(resultsPerPageInput) || config.resultsPerPage || 200;
+      const resultsPerPageInput = await ask('Введите результатов на страницу (Enter для значения из config, по умолчанию 1000): ');
+      resultsPerPage = parseInt(resultsPerPageInput) || config.resultsPerPage || 1000;
     }
 
     // Фиксированная сортировка для режимов 4, 5, 6, 7
@@ -1286,32 +1294,32 @@ async function runBot() {
       },
       'fake-personal': async () => {
         const results = await searchFakePersonal(searchConfig, rules, ask);
-        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       },
       'check-origins': async () => {
         const results = await checkAllOrigins(searchConfig, rules, ask);
-        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       },
       'socialclub-search': async () => {
         const results = await searchSocialClubAccounts(searchConfig, rules);
-        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       },
       'auto-check': async () => {
         const results = await autoCheckAllListings({...searchConfig, category: categories[0]}, rules);
-        await displayViolationsOnly(results, searchConfig.resultsPerPage || 200, ask);
+        await displayViolationsOnly(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       },
       'telegram-years': async () => {
         const results = await searchTelegramOtlegYears(searchConfig, rules);
-        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       },
       'search': async () => {
         const results = await searchByKeywords(searchConfig, rules);
-        await displayResults(results, searchConfig.resultsPerPage || 200, ask);
+        await displayResults(results, searchConfig.resultsPerPage || 1000, ask);
         return results;
       }
     };
