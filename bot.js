@@ -414,7 +414,8 @@ function formatItem(item, rules, extraProps = {}) {
   const subOrigin = item.resale_item_origin || null;
   
   // Исключаем объявления с "почта авторег"
-  const hasAutoregEmail = normalizeText(textToCheck).includes('почта авторег');
+  const combinedText = `${title} ${description}`.trim();
+  const hasAutoregEmail = normalizeText(combinedText).includes('почта авторег');
   
   return { id, title, description, url, violations, origin, subOrigin, sellerLogin, hasAutoregEmail, ...extraProps };
 }
