@@ -318,37 +318,53 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
 }
 
 function hasExplicitAgeOrDateNearKeyword(textLower) {
-  // Упрощенная логика: если в тексте есть паттерн даты/периода, считаем отлежку явной
   const dateOrAgePatterns = [
-    /\b\d{1,2}\s*(?:янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\b/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*(?:day|days|month|months|d|дн(?:\.|я|ей)?|день|дня|дни|дней|недел(?:я|ь|и)?|нед(?:\.|еля|ели)?|месяц(?:а|ев)?|год(?:а|ов)?|лет|час(?:а|ов)?|минут(?:а|ы)?|мин)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /\b\d+\s*[-/.]\s*\d+\b/
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{1,2}\s*(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4}(?:\s*г\.?|\s*год(?:а|ов)?)?)?(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*(?:г\.?|год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*[-/.]\s*\d+(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu
   ];
 
   return dateOrAgePatterns.some((re) => re.test(textLower));
 }
 
-function checkViolations(text, rules) {
-  if (!text || !rules.violations) return [];
-  
-  const textLower = normalizeText(text);
+function findViolations(title, description, rules) {
+  if (!rules.violations) return [];
+
+  const titleLower = normalizeText(title || '');
+  const descriptionLower = normalizeText(description || '');
+  const combinedLower = `${titleLower} ${descriptionLower}`.trim();
   const foundViolations = [];
-  
+
   for (const [category, violation] of Object.entries(rules.violations)) {
     for (const keyword of violation.keywords) {
       if (!keyword) continue;
       const keywordLower = normalizeText(keyword);
-      if (!textLower.includes(keywordLower)) continue;
-      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(textLower)) continue;
+      const foundInTitle = titleLower.includes(keywordLower);
+      const foundInDescription = descriptionLower.includes(keywordLower);
+      if (!foundInTitle && !foundInDescription) continue;
+      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(combinedLower)) continue;
+
+      const location = foundInTitle && foundInDescription
+        ? 'в названии и описании'
+        : foundInDescription
+          ? 'в описании'
+          : 'в названии';
+
       foundViolations.push({
         category,
         name: violation.name,
-        keyword
+        keyword,
+        location
       });
     }
   }
-  
+
   return foundViolations;
+}
+
+function checkViolations(text, rules) {
+  if (!text || !rules.violations) return [];
+  return findViolations(text, '', rules);
 }
 
 function escapeRegExp(value) {
@@ -393,8 +409,7 @@ function formatItem(item, rules, extraProps = {}) {
   const url = `https://lzt.market/${id}`;
   const sellerLogin = item.seller_login || item.seller || item.login || 'неизвестно';
 
-  const textToCheck = `${title} ${description}`.trim();
-  const violations = checkViolations(textToCheck, rules);
+  const violations = findViolations(title, description, rules);
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
   const subOrigin = item.resale_item_origin || null;
   
@@ -574,7 +589,8 @@ async function displayViolationsOnly(results, maxDisplay = 1000, ask) {
       console.log(`   Ссылка: ${item.url}`);
       console.log(`   ⚠️  Нарушения:`);
       item.violations.forEach(v => {
-        console.log(`      ${v.name} (${v.keyword})`);
+        const location = v.location ? ` ${v.location}` : '';
+        console.log(`      ${v.name}${location} (${v.keyword})`);
       });
       console.log(`${'-'.repeat(80)}`);
     });
