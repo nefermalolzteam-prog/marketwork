@@ -320,7 +320,9 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
 function hasExplicitAgeOrDateNearKeyword(textLower) {
   const dateOrAgePatterns = [
     /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{1,2}\s*(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4}(?:\s*г\.?|\s*год(?:а|ов)?)?)?(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*(?:г\.?|год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*(?:[.,]\s*\d+)?\+?\s*(?:г\.?|год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months|year|years|yr|yrs)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])(?:с|в)\s*\d{4}(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
+    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{4}(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
     /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*[-/.]\s*\d+(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu
   ];
 
@@ -902,7 +904,6 @@ async function checkAllCategories(config, rules, ask) {
   console.log(`Задержка между категориями: ${config.categoryDelayMs ?? 2000} мс\n`);
 
   let totalResults = [];
-  let totalViolations = 0;
 
   for (const category of config.checkCategories) {
     if (isInterrupted) break;
@@ -913,12 +914,10 @@ async function checkAllCategories(config, rules, ask) {
     try {
       const results = await autoCheckAllListings({...config, category, verbose: false}, rules);
       const resultsWithCategory = results.map(item => ({ ...item, category: catName }));
-      const violationsCount = resultsWithCategory.length;
       
       console.log(`   ✅ ${results.length} объявлений с нарушениями`);
       
       totalResults = mergeResults(totalResults, resultsWithCategory);
-      totalViolations += violationsCount;
       currentResults = totalResults;
       
       if (config.checkCategories.indexOf(category) < config.checkCategories.length - 1 && !isInterrupted) {
