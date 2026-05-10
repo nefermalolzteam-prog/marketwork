@@ -317,7 +317,11 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
   }
 }
 
-function hasExplicitAgeOrDateNearKeyword(textLower) {
+function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
+  // Нормализуем текст и ключевое слово если они переданы в исходном виде
+  let normalizedText = normalizeText(textLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '');
+  let normalizedKeyword = keywordLower ? normalizeText(keywordLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '') : '';
+  
   const dateOrAgePatterns = [
     // Полные даты: 5 марта 2026 г.
     /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{1,2}\s*(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4}(?:\s*г\.?|\s*год(?:а|ов)?)?)?(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
@@ -334,11 +338,26 @@ function hasExplicitAgeOrDateNearKeyword(textLower) {
     /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*[-/.]\s*\d+(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu
   ];
 
-  return dateOrAgePatterns.some((re) => re.test(textLower));
+  // Если ключевое слово не передано, просто проверить весь текст
+  if (!normalizedKeyword) {
+    return dateOrAgePatterns.some((re) => re.test(normalizedText));
+  }
+
+  // Найти индекс ключевого слова
+  const keywordIndex = normalizedText.indexOf(normalizedKeyword);
+  if (keywordIndex === -1) return false;
+
+  // Определить диапазон для поиска даты/периода (80 символов до и после ключевого слова)
+  const searchStart = Math.max(0, keywordIndex - 80);
+  const searchEnd = Math.min(normalizedText.length, keywordIndex + normalizedKeyword.length + 80);
+  const contextWindow = normalizedText.substring(searchStart, searchEnd);
+
+  // Проверить наличие даты/периода в окне поиска
+  return dateOrAgePatterns.some((re) => re.test(contextWindow));
 }
 
 
-function findViolations(title, description, rules) {
+function findViolations(title, description, rules, categoryId = null) {
   if (!rules.violations) return [];
 
   const titleLower = normalizeText(title || '');
@@ -346,14 +365,21 @@ function findViolations(title, description, rules) {
   const combinedLower = `${titleLower} ${descriptionLower}`.trim();
   const foundViolations = [];
 
+  // VPN (19) - исключаем нарушение "премиум аккаунт"
+  const isVPN = String(categoryId) === '19';
+
   for (const [category, violation] of Object.entries(rules.violations)) {
     for (const keyword of violation.keywords) {
       if (!keyword) continue;
+      
+      // Пропускаем "премиум аккаунт" для VPN раздела
+      if (isVPN && keyword === 'премиум аккаунт') continue;
+      
       const keywordLower = normalizeText(keyword);
       const foundInTitle = titleLower.includes(keywordLower);
       const foundInDescription = descriptionLower.includes(keywordLower);
       if (!foundInTitle && !foundInDescription) continue;
-      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(combinedLower)) continue;
+      if (category === 'vague_aging' && hasExplicitAgeOrDateNearKeyword(combinedLower, keywordLower)) continue;
 
       const location = foundInTitle && foundInDescription
         ? 'в названии и описании'
@@ -419,8 +445,9 @@ function formatItem(item, rules, extraProps = {}) {
   const description = item.description || item.desc || item.text || '';
   const url = `https://lzt.market/${id}`;
   const sellerLogin = item.seller?.username || item.seller_login || item.seller || item.login || 'неизвестно';
+  const categoryId = item.category_id || item.category || null;
 
-  const violations = findViolations(title, description, rules);
+  const violations = findViolations(title, description, rules, categoryId);
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
   const subOrigin = item.resale_item_origin || null;
   
