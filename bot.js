@@ -913,9 +913,9 @@ async function checkAllCategories(config, rules, ask) {
     try {
       const results = await autoCheckAllListings({...config, category, verbose: false}, rules);
       const resultsWithCategory = results.map(item => ({ ...item, category: catName }));
-      const violationsCount = resultsWithCategory.filter(item => item.violations.length > 0).length;
+      const violationsCount = resultsWithCategory.length;
       
-      console.log(`   ✅ ${results.length} объявлений, ${violationsCount} с нарушениями`);
+      console.log(`   ✅ ${results.length} объявлений с нарушениями`);
       
       totalResults = mergeResults(totalResults, resultsWithCategory);
       totalViolations += violationsCount;
@@ -937,7 +937,7 @@ async function checkAllCategories(config, rules, ask) {
   await displayViolationsOnly(totalResults, config.resultsPerPage || 1000, ask);
 
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`📊 ИТОГО: ${totalResults.length} объявлений проверено, ${totalViolations} с нарушениями`);
+  console.log(`📊 ИТОГО: ${totalResults.length} объявлений с нарушениями найдено`);
   console.log(`${'='.repeat(80)}`);
   const endTime = Date.now();
   const duration = (endTime - checkStartTime) / 1000;
@@ -959,10 +959,11 @@ async function autoCheckAllListings(config, rules) {
   }
 
   const results = await collectPages({ ...config, keywords: '' }, rules, 'Проверка');
+  const filteredResults = results.filter(item => item.violations.length > 0);
   if (verbose) {
-    console.log(`\n📊 Всего проверено объявлений: ${results.length}`);
+    console.log(`\n📊 Всего проверено объявлений: ${results.length}, с нарушениями: ${filteredResults.length}`);
   }
-  return results;
+  return filteredResults;
 }
 
 async function displayResults(results, maxDisplay = 1000, ask) {
