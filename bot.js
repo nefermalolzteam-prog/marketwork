@@ -433,6 +433,7 @@ function highlightOrigin(text) {
 function finalizeResults(results, startTime) {
   if (results.length === 0) {
     console.log('❌ Результаты не найдены.');
+    console.log('💡 Попробуйте перезапустить с другим режимом: npm start');
     return;
   }
   
@@ -545,6 +546,53 @@ async function searchOnce(config, rules, page = 1) {
   return { results: parsed, rawCount: items.length };
 }
 
+// Пулл с лимитом одновременных операций
+async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent = 3) {
+  const results = [];
+  const pageDelayMs = Number(config.pageDelayMs) >= 0 ? Number(config.pageDelayMs) : 500;
+  let inProgress = 0;
+  let pageIndex = 0;
+
+  return new Promise(async (resolve, reject) => {
+    const launchNextTask = async () => {
+      if (pageIndex >= pages.length || isInterrupted) {
+        if (inProgress === 0) {
+          resolve(results);
+        }
+        return;
+      }
+
+      inProgress++;
+      const page = pages[pageIndex];
+      pageIndex++;
+
+      try {
+        console.log(`📄 Обработка страницы ${page}... (одновременно: ${inProgress}/${maxConcurrent})`);
+        const { results: pageResults, rawCount } = await searchOnce(config, rules, page);
+        console.log(`   ✅ Страница ${page}: ${pageResults.length} объявлений`);
+        results.push(...pageResults);
+        
+        if (pageIndex < pages.length && !isInterrupted) {
+          await delay(pageDelayMs);
+        }
+      } catch (error) {
+        console.error(`   ❌ Ошибка на странице ${page}: ${error.message}`);
+        if (!error.message.includes('rate_limit')) {
+          // Игнорируем 429, другие ошибки тоже записываем
+        }
+      }
+
+      inProgress--;
+      launchNextTask();
+    };
+
+    // Запустить maxConcurrent задач одновременно
+    for (let i = 0; i < Math.min(maxConcurrent, pages.length); i++) {
+      launchNextTask();
+    }
+  });
+}
+
 async function collectPages(config, rules, itemLabel = 'Поиск') {
   let allResults = [];
   const maxPages = Number(config.maxPages) || 1;
@@ -553,21 +601,19 @@ async function collectPages(config, rules, itemLabel = 'Поиск') {
   const maxRetries = 2;
 
   if (config.parallelProcessing) {
-    // Параллельная обработка
-    const promises = [];
-    for (let page = 1; page <= maxPages; page++) {
-      promises.push(searchOnce(config, rules, page));
-    }
+    // Параллельная обработка с лимитом одновременных запросов
+    const pages = Array.from({ length: maxPages }, (_, i) => i + 1);
+    const maxConcurrent = 4; // Максимум 4 одновременных запроса
     try {
-      const results = await Promise.all(promises);
-      for (const { results: pageResults } of results) {
-        allResults = config.deduplicateResults
-          ? uniqItemsById(mergeResults(allResults, pageResults))
-          : mergeResults(allResults, pageResults);
-      }
+      const pageResults = await fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent);
+      allResults = config.deduplicateResults
+        ? uniqItemsById(pageResults)
+        : pageResults;
       currentResults = allResults;
+      console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
     } catch (error) {
       console.error('Ошибка в параллельной обработке:', error.message);
+      logError(`Ошибка в параллельной обработке: ${error.message}`);
     }
   } else {
     // Последовательная обработка
@@ -630,7 +676,8 @@ async function displayViolationsOnly(results, maxDisplay = 1000, ask) {
   console.log(`${'='.repeat(80)}`);
 
   if (problematic.length === 0) {
-    console.log('✅ Нарушений не найдено.\n');
+    console.log('✅ Нарушений не найдено.');
+    console.log('💡 Попробуйте перезапустить с другим режимом: npm start\n');
     logInfo(`Нарушений не найдено, режим=${currentMode}`);
     return;
   }
