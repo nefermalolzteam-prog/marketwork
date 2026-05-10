@@ -600,8 +600,12 @@ async function collectPages(config, rules, itemLabel = 'Поиск') {
   let retryCount = 0;
   const maxRetries = 2;
 
-  if (config.parallelProcessing) {
-    // Параллельная обработка с лимитом одновременных запросов
+  // Отключить параллельную обработку для режимов 4-7
+  const modesWithoutParallel = ['check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'];
+  const useParallel = config.parallelProcessing && !modesWithoutParallel.includes(currentMode);
+
+  if (useParallel) {
+    // Параллельная обработка с лимитом одновременных запросов (только для режимов 1, 2, 3)
     const pages = Array.from({ length: maxPages }, (_, i) => i + 1);
     const maxConcurrent = 4; // Максимум 4 одновременных запроса
     try {
@@ -616,7 +620,7 @@ async function collectPages(config, rules, itemLabel = 'Поиск') {
       logError(`Ошибка в параллельной обработке: ${error.message}`);
     }
   } else {
-    // Последовательная обработка
+    // Последовательная обработка (режимы 4-7 или если parallelProcessing отключена)
     for (let page = 1; page <= maxPages; page++) {
       if (isInterrupted) break;
 
