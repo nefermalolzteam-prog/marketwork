@@ -140,6 +140,11 @@ function validateConfig(config) {
     throw new Error('Ошибка: resultsPerPage должен быть числом от 1 до 1000.');
   }
 
+  if (config.resultsPerPage > 500) {
+    console.warn('⚠️ ПРЕДУПРЕЖДЕНИЕ: resultsPerPage > 500 может вызвать ошибку "Way too big output to log" на API.');
+    console.warn('Рекомендуется использовать значение 250-500 для стабильности.');
+  }
+
   if (!Number.isInteger(config.maxPages) || config.maxPages <= 0) {
     throw new Error('Ошибка: maxPages должен быть положительным целым числом.');
   }
@@ -706,8 +711,7 @@ async function displayViolationsOnly(results, maxDisplay = 1000, ask) {
       console.log(`   Ссылка: ${item.url}`);
       console.log(`   ⚠️  Нарушения:`);
       item.violations.forEach(v => {
-        const location = v.location ? ` ${v.location}` : '';
-        console.log(`      ${v.name}${location} (${v.keyword})`);
+        console.log(`      ${v.name}`);
       });
       console.log(`${'-'.repeat(80)}`);
     });
@@ -1018,6 +1022,7 @@ async function checkAllCategories(config, rules, ask) {
   console.log(`Задержка между категориями: ${config.categoryDelayMs ?? 2000} мс\n`);
 
   let totalResults = [];
+  let totalChecked = 0;
 
   for (const category of config.checkCategories) {
     if (isInterrupted) break;
@@ -1026,12 +1031,13 @@ async function checkAllCategories(config, rules, ask) {
     console.log(`\n📂 Проверка категории ${catName} (${category})...`);
 
     try {
-      const results = await autoCheckAllListings({...config, category, verbose: false}, rules);
-      const resultsWithCategory = results.map(item => ({ ...item, category: catName }));
+      const result = await autoCheckAllListings({...config, category, verbose: false}, rules);
+      const resultsWithCategory = result.violations.map(item => ({ ...item, category: catName }));
       
-      console.log(`   ✅ ${results.length} объявлений с нарушениями`);
+      console.log(`   ✅ Проверено: ${result.totalChecked}, нарушений: ${result.violations.length}`);
       
       totalResults = mergeResults(totalResults, resultsWithCategory);
+      totalChecked += result.totalChecked;
       currentResults = totalResults;
       
       if (config.checkCategories.indexOf(category) < config.checkCategories.length - 1 && !isInterrupted) {
@@ -1049,14 +1055,10 @@ async function checkAllCategories(config, rules, ask) {
 
   await displayViolationsOnly(totalResults, config.resultsPerPage || 1000, ask);
 
-  console.log(`\n${'='.repeat(80)}`);
-  console.log(`📊 ИТОГО: ${totalResults.length} объявлений с нарушениями найдено`);
-  console.log(`${'='.repeat(80)}`);
   const endTime = Date.now();
   const duration = (endTime - checkStartTime) / 1000;
-  console.log(`⏱️  Время выполнения: ${duration.toFixed(2)} секунд`);
   
-  return totalResults;
+  return { results: totalResults, totalChecked, duration };
 }
 
 async function autoCheckAllListings(config, rules) {
@@ -1076,7 +1078,7 @@ async function autoCheckAllListings(config, rules) {
   if (verbose) {
     console.log(`\n📊 Всего проверено объявлений: ${results.length}, с нарушениями: ${filteredResults.length}`);
   }
-  return filteredResults;
+  return { totalChecked: results.length, violations: filteredResults };
 }
 
 async function displayResults(results, maxDisplay = 1000, ask) {
@@ -1354,9 +1356,9 @@ async function runBot() {
     // Ввод результатов на страницу
     let resultsPerPage;
     if (mode === 'check-origins') {
-      resultsPerPage = 1000; // Фиксированное значение для режима 4
+      resultsPerPage = 500; // Фиксированное значение для режима 4 (уменьшено с 1000 для избежания ошибки API)
     } else if (['fake-personal', 'telegram-years', 'socialclub-search'].includes(mode)) {
-      resultsPerPage = 1000; // Фиксированное значение для режимов 5, 6, 7
+      resultsPerPage = 500; // Фиксированное значение для режимов 5, 6, 7 (уменьшено с 1000 для избежания ошибки API)
     } else {
       const resultsPerPageInput = await ask('Введите результатов на страницу (Enter для значения из config, по умолчанию 1000): ');
       resultsPerPage = parseInt(resultsPerPageInput) || config.resultsPerPage || 1000;
@@ -1427,8 +1429,12 @@ async function runBot() {
     // Обработчики режимов
     const modeHandlers = {
       'check-categories': async () => {
-        const results = await checkAllCategories(searchConfig, rules, ask);
-        return results;
+        const result = await checkAllCategories(searchConfig, rules, ask);
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`📊 ИТОГО: ${result.totalChecked} объявлений проверено, ${result.results.length} с нарушениями найдено`);
+        console.log(`${'='.repeat(80)}`);
+        console.log(`⏱️  Время выполнения: ${result.duration.toFixed(2)} секунд`);
+        return result.results;
       },
       'fake-personal': async () => {
         const results = await searchFakePersonal(searchConfig, rules, ask);
