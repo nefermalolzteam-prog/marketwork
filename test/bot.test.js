@@ -58,12 +58,19 @@ function run() {
   // Тесты для hasExplicitAgeOrDateNearKeyword
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 14 дней', 'отлега'), true, 'Должен найти "14 дней"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('7+ дней отлежка', 'отлежка'), true, 'Должен найти "7+ дней"');
-  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлежка 3 месяца', 'отлежка'), true, 'Должен найти "3 месяца"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 3 месяца', 'отлега'), true, 'Должен найти "3 месяца"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('есть отлежка', 'отлежка'), false, 'Не должен найти дату в "есть отлежка"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 2 года', 'отлега'), true, 'Должен найти "2 года"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 month', 'inactive'), true, 'Должен найти "1 month"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 year', 'inactive'), true, 'Должен найти "1 year"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1,5 years', 'inactive'), true, 'Должен найти "1,5 years"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега от 30д', 'отлега'), true, 'Должен найти сокращение "30д"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 90d+', 'отлега'), true, 'Должен найти сокращение "90d+"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега от 7d', 'отлега'), true, 'Должен найти сокращение "7d"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега от 120d', 'отлега'), true, 'Должен найти "120d"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 2m', 'отлега'), true, 'Должен найти сокращение "2m" (месяцы)');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 3y', 'отлега'), true, 'Должен найти сокращение "3y" (года)');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive за 10d', 'inactive'), true, 'Должен найти "за 10d"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('последняя активность в 2023', 'последняя активность'), true, 'Должен найти год "2023" после слова "в"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('5 мар 2012 Последняя активность', 'последняя активность'), true, 'Должен найти дату в сокращенном формате "5 мар 2012"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('9 марта 2026 г. Последняя активность', 'последняя активность'), true, 'Должен найти дату в формате "9 марта 2026 г."');
