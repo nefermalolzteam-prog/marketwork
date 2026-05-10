@@ -4,6 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// Новые импорты для расширений
+import { exportToCSV, exportToExcel, exportToPDF } from './export.js';
+import { initDatabase, saveCheckResults, getStatistics } from './database.js';
+import { initTelegramBot, sendViolationReport } from './telegram.js';
+import { startWebServer } from './web.js';
+import { initI18n, t } from './i18n.js';
+
 const configPath = path.resolve('config.json');
 const rulesPath = path.resolve('rules.json');
 
@@ -319,8 +326,8 @@ async function fetchJson(url, token, retries = 3, retryDelayMs = 500) {
 
 function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
   // Нормализуем текст и ключевое слово если они переданы в исходном виде
-  let normalizedText = normalizeText(textLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '');
-  let normalizedKeyword = keywordLower ? normalizeText(keywordLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '') : '';
+  const normalizedText = normalizeText(textLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '');
+  const normalizedKeyword = keywordLower ? normalizeText(keywordLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '') : '';
   
   const dateOrAgePatterns = [
     // Полные даты: 5 марта 2026 г.
@@ -545,48 +552,68 @@ async function collectPages(config, rules, itemLabel = 'Поиск') {
   let retryCount = 0;
   const maxRetries = 2;
 
-  for (let page = 1; page <= maxPages; page++) {
-    if (isInterrupted) break;
-
+  if (config.parallelProcessing) {
+    // Параллельная обработка
+    const promises = [];
+    for (let page = 1; page <= maxPages; page++) {
+      promises.push(searchOnce(config, rules, page));
+    }
     try {
-      console.log(`📄 ${itemLabel} на странице ${page}...`);
-      const { results, rawCount } = await searchOnce(config, rules, page);
-      console.log(`   Найдено ${results.length} объявлений на странице ${page}`);
-      allResults = config.deduplicateResults
-        ? uniqItemsById(mergeResults(allResults, results))
-        : mergeResults(allResults, results);
-
+      const results = await Promise.all(promises);
+      for (const { results: pageResults } of results) {
+        allResults = config.deduplicateResults
+          ? uniqItemsById(mergeResults(allResults, pageResults))
+          : mergeResults(allResults, pageResults);
+      }
       currentResults = allResults;
-      retryCount = 0; // Сброс счётчика при успешном запросе
-
-      if (rawCount === 0) {
-        console.log(`   Страница ${page} пуста, остановка.`);
-        break;
-      }
-
-      if (page < maxPages && !isInterrupted) {
-        await delay(pageDelayMs);
-      }
     } catch (error) {
-      if (error.message === 'rate_limit') {
-        if (retryCount < maxRetries) {
-          retryCount++;
-          console.warn(`⚠️  Лимит запросов 429, повтор ${retryCount}/${maxRetries} после 10 сек...`);
-          await delay(10000);
-          page--; // Повторить ту же страницу
-          continue;
-        } else {
-          console.error('❌ Превышено максимальное количество повторов при rate limit.');
+      console.error('Ошибка в параллельной обработке:', error.message);
+    }
+  } else {
+    // Последовательная обработка
+    for (let page = 1; page <= maxPages; page++) {
+      if (isInterrupted) break;
+
+      try {
+        console.log(`📄 ${itemLabel} на странице ${page}...`);
+        const { results, rawCount } = await searchOnce(config, rules, page);
+        console.log(`   Найдено ${results.length} объявлений на странице ${page}`);
+        allResults = config.deduplicateResults
+          ? uniqItemsById(mergeResults(allResults, results))
+          : mergeResults(allResults, results);
+
+        currentResults = allResults;
+        retryCount = 0; // Сброс счётчика при успешном запросе
+
+        if (rawCount === 0) {
+          console.log(`   Страница ${page} пуста, остановка.`);
           break;
         }
+
+        if (page < maxPages && !isInterrupted) {
+          await delay(pageDelayMs);
+        }
+      } catch (error) {
+        if (error.message === 'rate_limit') {
+          if (retryCount < maxRetries) {
+            retryCount++;
+            console.warn(`⚠️  Лимит запросов 429, повтор ${retryCount}/${maxRetries} после 10 сек...`);
+            await delay(10000);
+            page--; // Повторить ту же страницу
+            continue;
+          } else {
+            console.error('❌ Превышено максимальное количество повторов при rate limit.');
+            break;
+          }
+        }
+        if (error.message.includes('HTTP 404')) {
+          console.error(`❌ Ошибка на странице ${page}:`, error.message);
+          console.warn('⚠️  Возможно, категория не поддерживается на этом эндпоинте или неверно указана.');
+        } else {
+          console.error(`❌ Ошибка на странице ${page}:`, error.message);
+        }
+        break;
       }
-      if (error.message.includes('HTTP 404')) {
-        console.error(`❌ Ошибка на странице ${page}:`, error.message);
-        console.warn('⚠️  Возможно, категория не поддерживается на этом эндпоинте или неверно указана.');
-      } else {
-        console.error(`❌ Ошибка на странице ${page}:`, error.message);
-      }
-      break;
     }
   }
 
@@ -1122,6 +1149,13 @@ async function runBot() {
   const rules = loadRules();
   setupGracefulShutdown();
 
+  // Инициализация новых компонентов
+  const db = initDatabase();
+  await initI18n(config.language || 'ru');
+  const telegramBot = initTelegramBot(config.telegramToken);
+  let webServer = null;
+
+  console.log(t('welcome'));
   console.log('🚀 Запуск LZT Market bot...');
   console.log('✅ Проверка нарушений правил включена\n');
   if (config.apiDocs) {
@@ -1382,6 +1416,35 @@ async function runBot() {
       const results = await handler();
       currentResults = results;
       finalizeResults(results, startTime);
+
+      // Сохранение в БД
+      await saveCheckResults(db, mode, searchConfig.category || 'all', results);
+      const stats = await getStatistics(db);
+      console.log(`📈 Статистика: проверок ${stats.total_checks}, нарушений ${stats.total_violations}, среднее ${Number(stats.avg_violations_per_check || 0).toFixed(2)}`);
+
+      // Запуск веб-сервера если включено
+      if (config.enableWebServer && !webServer) {
+        webServer = startWebServer(results, config.webPort || 3000);
+      }
+
+      // Отправка отчёта в Telegram
+      if (telegramBot && config.telegramChatId) {
+        await sendViolationReport(telegramBot, config.telegramChatId, results, mode);
+      }
+
+      // Предложение экспорта
+      if (results.length > 0) {
+        const exportChoice = await ask('Экспортировать результаты? (csv/excel/pdf/no): ');
+        const exportType = exportChoice.toLowerCase();
+        if (exportType === 'csv') {
+          await exportToCSV(results, `results_${Date.now()}.csv`);
+        } else if (exportType === 'excel') {
+          await exportToExcel(results, `results_${Date.now()}.xlsx`);
+        } else if (exportType === 'pdf') {
+          await exportToPDF(results, `results_${Date.now()}.pdf`);
+        }
+      }
+
     } catch (error) {
       if (error.message !== 'rate_limit' && !isInterrupted) {
         console.error('❌ Ошибка при выполнении:', error.message);
@@ -1407,7 +1470,8 @@ export {
   checkViolations,
   getItemId,
   validateConfig,
-  hasExplicitAgeOrDateNearKeyword
+  hasExplicitAgeOrDateNearKeyword,
+  searchOnce
 };
 
 if (SCRIPT_PATH === process.argv[1]) {
