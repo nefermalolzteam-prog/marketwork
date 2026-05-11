@@ -52,7 +52,6 @@ export const CATEGORY_PATHS = {
 };
 
 export const PARALLEL_DISABLED_MODES = new Set([
-  'check-categories',
   'check-origins',
   'fake-personal',
   'telegram-years',
