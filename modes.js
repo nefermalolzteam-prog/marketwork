@@ -115,7 +115,13 @@ export async function searchFakePersonal(config, rules) {
     };
     const pageResults = await collectPages(categoryConfig, rules, `Поиск личного в ${catName}`);
     const titleMatched = pageResults.filter(item => normalizeText(item.title).includes('личный'));
-    return titleMatched.map(item => ({ ...item, category: catName, checkedOrigin: 'Личный', excludedOrigin: 'Личный' }));
+    return titleMatched.map(item => ({
+      ...item,
+      category: catName,
+      checkedOrigin: 'Личный',
+      excludedOrigin: 'Личный',
+      matchedKeywords: ['личный']
+    }));
   }, config.runtimeState);
 
   console.log(`\n📊 Всего найдено объявлений: ${results.length}`);
@@ -155,7 +161,17 @@ export async function checkAllOrigins(config, rules) {
         excludeOrigins: [origin]
       };
       const pageResults = await collectPages(categoryConfig, rules, `Проверка ${originInfo.name} в ${catName}`);
-      return pageResults.map(item => ({ ...item, category: catName, checkedOrigin: originInfo.name, excludedOrigin: originInfo.name }));
+      return pageResults.map(item => {
+        const normalizedTitle = normalizeText(item.title);
+        const matchedKeywords = originInfo.searchTerms.filter(term => normalizedTitle.includes(normalizeText(term)));
+        return {
+          ...item,
+          category: catName,
+          checkedOrigin: originInfo.name,
+          excludedOrigin: originInfo.name,
+          matchedKeywords
+        };
+      });
     }, config.runtimeState);
 
     totalResults = mergeResults(totalResults, originResults);

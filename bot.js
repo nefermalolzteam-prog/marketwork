@@ -296,8 +296,8 @@ async function runBot() {
           }
           return catChoice.split(',').map(c => c.trim()).filter(c => cats[c] || c);
         },
-        'check-origins': () => config.checkCategories || Object.keys(cats),
-        'fake-personal': () => config.checkCategories || Object.keys(cats),
+        'check-origins': () => Object.keys(cats),
+        'fake-personal': () => Object.keys(cats),
         'telegram-years': () => [TELEGRAM_CATEGORY_ID],
         'socialclub-search': () => ['1', '12'],
         'default': async () => {
@@ -353,7 +353,7 @@ async function runBot() {
         order_by: orderBy,
         keywords,
         category: ['check-categories', 'check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'].includes(mode) ? '' : categories[0] || config.category || '',
-        checkCategories: mode === 'check-categories' ? categories : config.checkCategories,
+        checkCategories: ['check-categories', 'check-origins', 'fake-personal'].includes(mode) ? categories : config.checkCategories,
         includeOrigins,
         excludeOrigins,
         maxPages,

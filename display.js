@@ -37,6 +37,22 @@ export function highlightViolations(text, violations) {
   return highlighted;
 }
 
+export function highlightKeywords(text, keywords) {
+  if (!Array.isArray(keywords) || keywords.length === 0) return text;
+  let highlighted = text;
+  for (const keyword of keywords.filter(Boolean)) {
+    const regex = new RegExp(`(${escapeRegExp(keyword)})`, 'gi');
+    highlighted = highlighted.replace(regex, '\x1b[1m$1\x1b[0m');
+  }
+  return highlighted;
+}
+
+export function highlightTitle(text, violations, keywords) {
+  let highlighted = highlightViolations(text, violations);
+  highlighted = highlightKeywords(highlighted, keywords);
+  return highlighted;
+}
+
 export function highlightOrigin(text, isChecked = false) {
   if (isChecked) {
     return `\x1b[42m\x1b[37m${text}\x1b[0m`;
@@ -79,7 +95,7 @@ export async function displayResults(results, maxDisplay = 1000, ask, options = 
       } else if (item.origin) {
         console.log(`   Происхождение: ${highlightOrigin(getOriginName(item.origin, item.subOrigin))}`);
       }
-      console.log(`   Название: ${highlightViolations(item.title, item.violations)}`);
+      console.log(`   Название: ${highlightTitle(item.title, item.violations, item.matchedKeywords)}`);
       console.log(`   Продавец: ${item.sellerLogin}`);
       console.log(`   Ссылка: ${item.url}`);
       if (item.violations?.length > 0) {
@@ -161,7 +177,7 @@ export async function displayViolationsOnly(results, maxDisplay = 1000, ask, opt
       if (item.category) {
         console.log(`   Раздел: ${item.category}`);
       }
-      console.log(`   Название: ${highlightViolations(item.title, item.violations)}`);
+      console.log(`   Название: ${highlightTitle(item.title, item.violations, item.matchedKeywords)}`);
       console.log(`   Продавец: ${item.sellerLogin}`);
       console.log(`   Ссылка: ${item.url}`);
       console.log('   ⚠️  Нарушения:');
