@@ -188,6 +188,9 @@ export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurr
         const { results: pageResults, rawCount } = await searchOnce(config, rules, page);
         console.log(`   ✅ Страница ${page}: ${pageResults.length} объявлений`);
         results.push(...pageResults);
+        if (config.runtimeState) {
+          config.runtimeState.partialResults = results;
+        }
 
         if (rawCount === 0) {
           stopFurther = true;
@@ -213,6 +216,9 @@ export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurr
 
 export async function collectPages(config, rules, itemLabel = 'Поиск') {
   let allResults = [];
+  if (config.runtimeState) {
+    config.runtimeState.partialResults = allResults;
+  }
   const maxPages = normalizePositiveInteger(config.maxPages, 1);
   const pageDelayMs = normalizePositiveInteger(config.pageDelayMs, 1000);
   const useParallel = config.parallelProcessing && isParallelMode(config.mode);
@@ -225,6 +231,9 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
     console.log(`Параллельная обработка страниц: ${maxConcurrent} одновременных запросов.`);
     const pageResults = await fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent);
     allResults = pageResults;
+    if (config.runtimeState) {
+      config.runtimeState.partialResults = allResults;
+    }
     console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
   } else {
     let retryCount = 0;
@@ -236,6 +245,9 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
         const { results, rawCount } = await searchOnce(config, rules, page);
         console.log(`   ✅ Страница ${page}: ${results.length} объявлений`);
         allResults.push(...results);
+        if (config.runtimeState) {
+          config.runtimeState.partialResults = allResults;
+        }
         retryCount = 0;
 
         if (rawCount === 0) {
@@ -280,12 +292,18 @@ export function buildOtlegYearQueries() {
 
 export async function collectPhraseSearches(config, rules, phrases, itemLabel = 'Поиск') {
   let allResults = [];
+  if (config.runtimeState) {
+    config.runtimeState.partialResults = allResults;
+  }
   for (const phrase of phrases) {
     if (config.runtimeState?.isInterrupted) break;
     const phraseConfig = { ...config, keywords: [phrase] };
     console.log(`\n🔎 Поиск фразы: ${phrase}`);
     const results = await collectPages(phraseConfig, rules, itemLabel);
     allResults = mergeResults(allResults, results);
+    if (config.runtimeState) {
+      config.runtimeState.partialResults = allResults;
+    }
   }
   return allResults;
 }

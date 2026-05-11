@@ -159,17 +159,19 @@ function setupGracefulShutdown(runtimeState) {
     console.log('\n\n⚠️  Получен сигнал прерывания (Ctrl+C)...');
     console.log('📊 Выведу результаты, которые уже найдены...\n');
 
-    if (currentResults.length > 0) {
+    const interruptedResults = runtimeState.partialResults || [];
+    const resultsToShow = currentResults.length > 0 ? currentResults : interruptedResults;
+    if (resultsToShow.length > 0) {
       if (['search', 'auto-check', 'telegram-years', 'fake-personal', 'check-origins', 'socialclub-search'].includes(currentMode)) {
-        displayResults(currentResults, 1000, null, { mode: currentMode });
+        displayResults(resultsToShow, 1000, null, { mode: currentMode });
       } else {
-        displayViolationsOnly(currentResults, 1000, null, { mode: currentMode });
+        displayViolationsOnly(resultsToShow, 1000, null, { mode: currentMode });
       }
-      const totalViolations = currentResults.reduce((sum, item) => sum + item.violations.length, 0);
+      const totalViolations = resultsToShow.reduce((sum, item) => sum + item.violations.length, 0);
       const endTime = Date.now();
       const duration = (endTime - startTime) / 1000;
       console.log(`\n${'='.repeat(80)}`);
-      console.log(`📊 Результаты до прерывания: ${currentResults.length} объявлений, ${totalViolations} нарушений`);
+      console.log(`📊 Результаты до прерывания: ${resultsToShow.length} объявлений, ${totalViolations} нарушений`);
       console.log(`⏱️  Время выполнения: ${duration.toFixed(2)} секунд`);
       console.log(`${'='.repeat(80)}`);
       console.log('💡 Для перезапуска бота с другим режимом запустите: npm start');
@@ -187,7 +189,7 @@ async function runBot() {
   validateConfig(config);
   initializeLogging(config);
   const rules = loadRules();
-  const runtimeState = { isInterrupted: false };
+  const runtimeState = { isInterrupted: false, partialResults: [] };
   config.runtimeState = runtimeState;
   setupGracefulShutdown(runtimeState);
 
