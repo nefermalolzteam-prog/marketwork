@@ -1078,7 +1078,7 @@ async function autoCheckAllListings(config, rules) {
   if (verbose) {
     console.log(`\n📊 Всего проверено объявлений: ${results.length}, с нарушениями: ${filteredResults.length}`);
   }
-  return { totalChecked: results.length, violations: filteredResults };
+  return filteredResults;
 }
 
 async function displayResults(results, maxDisplay = 1000, ask) {
@@ -1349,8 +1349,9 @@ async function runBot() {
     if (['fake-personal', 'telegram-years', 'socialclub-search', 'check-origins'].includes(mode)) {
       maxPages = 1; // Фиксированное значение для режимов 4, 5, 6, 7
     } else {
-      const maxPagesInput = await ask('Введите максимальное количество страниц (Enter для значения из config, по умолчанию 1000): ');
-      maxPages = parseInt(maxPagesInput) || config.maxPages || 20;
+      const defaultMaxPages = config.maxPages || 20;
+      const maxPagesInput = await ask(`Введите максимальное количество страниц (Enter для значения из config, по умолчанию ${defaultMaxPages}): `);
+      maxPages = parseInt(maxPagesInput) || defaultMaxPages;
     }
 
     // Ввод результатов на страницу
@@ -1360,8 +1361,9 @@ async function runBot() {
     } else if (['fake-personal', 'telegram-years', 'socialclub-search'].includes(mode)) {
       resultsPerPage = 500; // Фиксированное значение для режимов 5, 6, 7 (уменьшено с 1000 для избежания ошибки API)
     } else {
-      const resultsPerPageInput = await ask('Введите результатов на страницу (Enter для значения из config, по умолчанию 1000): ');
-      resultsPerPage = parseInt(resultsPerPageInput) || config.resultsPerPage || 1000;
+      const defaultResultsPerPage = config.resultsPerPage || 1000;
+      const resultsPerPageInput = await ask(`Введите результатов на страницу (Enter для значения из config, по умолчанию ${defaultResultsPerPage}): `);
+      resultsPerPage = parseInt(resultsPerPageInput) || defaultResultsPerPage;
     }
 
     // Фиксированная сортировка для режимов 4, 5, 6, 7
