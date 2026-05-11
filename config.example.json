@@ -42,6 +42,8 @@
   "_comment_language": "Язык интерфейса (ru/en)",
   "parallelProcessing": false,
   "_comment_parallelProcessing": "Параллельная обработка страниц (true для скорости, false для стабильности)",
+  "maxConcurrentRequests": 4,
+  "_comment_maxConcurrentRequests": "Максимум одновременных запросов при параллельной обработке и при одновременной проверке категорий",
   "enableWebServer": false,
   "_comment_enableWebServer": "Запуск веб-сервера для просмотра результатов",
   "webPort": 3000,

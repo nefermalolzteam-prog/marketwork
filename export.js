@@ -52,7 +52,9 @@ export async function exportToExcel(results, filePath) {
       title: item.title,
       price: item.price,
       origin: item.origin,
-      violations: item.violations.join('; '),
+      violations: Array.isArray(item.violations)
+        ? item.violations.map(v => v.name || v.keyword || v).join('; ')
+        : String(item.violations || ''),
       url: item.url
     });
   });
@@ -85,7 +87,10 @@ export async function exportToPDF(results, filePath) {
   // Таблица результатов
   doc.fontSize(12).text('Результаты:');
   results.forEach((item, index) => {
-    doc.text(`${index + 1}. ${item.title} - Нарушения: ${item.violations.map(v => v.name).join(', ')}`);
+    const violationsText = Array.isArray(item.violations)
+      ? item.violations.map(v => v.name || v.keyword || v).join(', ')
+      : String(item.violations || '');
+    doc.text(`${index + 1}. ${item.title} - Нарушения: ${violationsText}`);
   });
 
   // Простой график (текстовая версия, для реального графика нужен canvas)

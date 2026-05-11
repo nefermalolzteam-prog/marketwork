@@ -41,7 +41,10 @@ export async function sendDetailedReport(bot, chatId, results) {
   let currentChunk = '📋 Детальный отчёт:\n\n';
 
   results.forEach((item, index) => {
-    const itemText = `${index + 1}. ${item.title}\nЦена: ${item.price}\nНарушения: ${item.violations.map(v => v.name).join(', ')}\nURL: ${item.url}\n\n`;
+    const violationsText = Array.isArray(item.violations)
+      ? item.violations.map(v => v.name || v.keyword || v).join(', ')
+      : String(item.violations || '');
+    const itemText = `${index + 1}. ${item.title}\nЦена: ${item.price}\nНарушения: ${violationsText}\nURL: ${item.url}\n\n`;
 
     if ((currentChunk + itemText).length > 4000) {
       chunks.push(currentChunk);

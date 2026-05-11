@@ -48,7 +48,7 @@ export function startWebServer(results, port = 3000) {
                 <td>${item.title}</td>
                 <td>${item.price}</td>
                 <td>${item.origin}</td>
-                <td class="violation">${item.violations.map(v => v.name).join(', ')}</td>
+                <td class="violation">${Array.isArray(item.violations) ? item.violations.map(v => v.name || v.keyword || v).join(', ') : String(item.violations || '')}</td>
                 <td><a href="${item.url}" target="_blank">Ссылка</a></td>
               </tr>
             `).join('')}

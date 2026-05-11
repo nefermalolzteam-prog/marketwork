@@ -47,6 +47,7 @@
 ### Параллельная обработка
 - Опция для одновременной проверки нескольких страниц
 - Включение: `"parallelProcessing": true` в config
+- Настройка максимума одновременных запросов: `"maxConcurrentRequests": 4`
 - Увеличивает скорость, но может вызвать rate limit
 
 ## Установка
@@ -56,7 +57,10 @@
    ```bash
    cp config.example.json config.json
    ```
-3. Заполните `token` (получить на [https://lzt.market](https://lzt.market))
+3. Заполните `token` и другие параметры в `config.json`.
+4. `config.json` уже добавлен в `.gitignore`, поэтому он остаётся локальным и не коммитится.
+
+> Если вы видите локальную папку `node_modules`, она также не должна попадать в репозиторий.
 
 ## Запуск
 
@@ -325,6 +329,7 @@ MIT
   "excludeOrigins": [],
   "language": "ru",
   "parallelProcessing": false,
+  "maxConcurrentRequests": 4,
   "enableWebServer": false,
   "webPort": 3000,
   "telegramToken": "",

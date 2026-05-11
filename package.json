@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node bot.js",
-    "check-syntax": "node --check bot.js && node --check export.js && node --check database.js && node --check telegram.js && node --check web.js && node --check inspect_paths.js && node --check worker.js && node --check test/bot.test.js && node --check test_patterns.js",
+    "check-syntax": "node --check api.js bot.js constants.js database.js display.js export.js i18n.js inspect_paths.js logger.js modes.js search.js telegram.js test_patterns.js web.js worker.js test/bot.test.js",
     "lint": "npm run check-syntax && eslint . --ext .js",
     "test": "node test/bot.test.js",
     "test:watch": "node --watch test/bot.test.js"

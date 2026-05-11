@@ -5,7 +5,9 @@ const dbPath = path.resolve('bot_history.db');
 
 // Инициализация БД
 export function initDatabase() {
-  const db = new sqlite3.Database(dbPath);
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) console.error('Ошибка подключения к БД:', err.message);
+  });
   
   // Создание таблиц
   db.serialize(() => {
@@ -36,41 +38,76 @@ export function initDatabase() {
   return db;
 }
 
+// Закрытие БД
+export function closeDatabase(db) {
+  return new Promise((resolve, reject) => {
+    if (db) {
+      db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    } else {
+      resolve();
+    }
+  });
+}
+
 // Сохранение результатов проверки
 export function saveCheckResults(db, mode, category, results) {
   return new Promise((resolve, reject) => {
-    const violationsCount = results.reduce((sum, item) => sum + item.violations.length, 0);
+    if (!results || results.length === 0) {
+      resolve();
+      return;
+    }
+
+    const violationsCount = results.reduce((sum, item) => {
+      if (Array.isArray(item.violations)) {
+        return sum + item.violations.length;
+      }
+      return sum + (item.violations ? 1 : 0);
+    }, 0);
+
     db.run(`
       INSERT INTO checks (mode, category, results, violations_count, timestamp)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [mode, category, JSON.stringify(results), violationsCount], function(err) {
-      if (err) reject(err);
-      else {
-        // Сохранить объявления
-        const stmt = db.prepare(`
-          INSERT OR REPLACE INTO listings (id, title, price, origin, violations, url, last_checked)
-          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `);
-        
-        let completed = 0;
-        results.forEach(item => {
-          stmt.run([
-            item.id,
-            item.title,
-            item.price,
-            item.origin,
-            JSON.stringify(item.violations),
-            item.url
-          ], (err) => {
-            if (err) console.error('Ошибка сохранения объявления:', err);
-            completed++;
-            if (completed === results.length) {
-              stmt.finalize();
-              resolve();
-            }
-          });
-        });
+      if (err) {
+        console.error('Ошибка сохранения результатов:', err.message);
+        reject(err);
+        return;
       }
+
+      // Сохранить объявления
+      const stmt = db.prepare(`
+        INSERT OR REPLACE INTO listings (id, title, price, origin, violations, url, last_checked)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `);
+      
+      let completed = 0;
+      let hasError = false;
+
+      results.forEach(item => {
+        stmt.run([
+          item.id,
+          item.title,
+          item.price,
+          item.origin,
+          JSON.stringify(item.violations),
+          item.url
+        ], (err) => {
+          if (err && !hasError) {
+            hasError = true;
+            console.error('Ошибка сохранения объявления:', err.message);
+          }
+          completed++;
+          if (completed === results.length) {
+            stmt.finalize((err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          }
+        });
+      });
     });
   });
 }
