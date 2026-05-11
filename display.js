@@ -101,7 +101,7 @@ export async function displayResults(results, maxDisplay = 1000, ask, options = 
       if (item.violations?.length > 0) {
         console.log(`   ⚠️  НАРУШЕНИЯ НАЙДЕНЫ:`);
         item.violations.forEach(v => {
-          console.log(`      ${v.name} (${v.keyword})`);
+          console.log(`      ${v.name}: "${v.keyword}" ${v.location}`);
         });
       }
       console.log(`${'-'.repeat(80)}`);
@@ -182,7 +182,7 @@ export async function displayViolationsOnly(results, maxDisplay = 1000, ask, opt
       console.log(`   Ссылка: ${item.url}`);
       console.log('   ⚠️  Нарушения:');
       item.violations.forEach(v => {
-        console.log(`      ${v.name}`);
+        console.log(`      ${v.name}: "${v.keyword}" ${v.location}`);
       });
       console.log(`${'-'.repeat(80)}`);
     });

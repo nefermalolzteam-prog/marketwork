@@ -61,6 +61,9 @@ function run() {
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 3 месяца', 'отлега'), true, 'Должен найти "3 месяца"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('есть отлежка', 'отлежка'), false, 'Не должен найти дату в "есть отлежка"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега 2 года', 'отлега'), true, 'Должен найти "2 года"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега месяц', 'отлега'), true, 'Должен найти "месяц" без цифр');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега больше года', 'отлега'), true, 'Должен найти "больше года"');
+  assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега с марта', 'отлега'), true, 'Должен найти "с марта"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 month', 'inactive'), true, 'Должен найти "1 month"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 year', 'inactive'), true, 'Должен найти "1 year"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1,5 years', 'inactive'), true, 'Должен найти "1,5 years"');
