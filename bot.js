@@ -162,7 +162,7 @@ function setupGracefulShutdown(runtimeState) {
     const interruptedResults = runtimeState.partialResults || [];
     const resultsToShow = currentResults.length > 0 ? currentResults : interruptedResults;
     if (resultsToShow.length > 0) {
-      if (['search', 'auto-check', 'telegram-years', 'fake-personal', 'check-origins', 'socialclub-search'].includes(currentMode)) {
+      if (['telegram-years', 'fake-personal', 'check-origins', 'socialclub-search'].includes(currentMode)) {
         displayResults(resultsToShow, 1000, null, { mode: currentMode });
       } else {
         displayViolationsOnly(resultsToShow, 1000, null, { mode: currentMode });
