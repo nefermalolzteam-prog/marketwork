@@ -17,6 +17,18 @@ export function mergeResults(existing, newResults) {
   return existing.concat(newResults);
 }
 
+export function uniqItemsById(items) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const id = getItemId(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    unique.push(item);
+  }
+  return unique;
+}
+
 export function normalizePositiveInteger(value, defaultValue) {
   const num = Number(value);
   return Number.isInteger(num) && num > 0 ? num : defaultValue;
@@ -76,6 +88,13 @@ export function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
   return dateOrAgePatterns.some((re) => re.test(contextWindow));
 }
 
+function keywordExclusionMatch(keywordLower, combinedLower) {
+  if (keywordLower === 'жир') {
+    return combinedLower.includes('пожиратель') || combinedLower.includes('пассажиров');
+  }
+  return false;
+}
+
 function findViolations(title, description, rules, categoryId = null) {
   if (!rules.violations) return [];
 
@@ -91,6 +110,8 @@ function findViolations(title, description, rules, categoryId = null) {
       if (isVPN && keyword === 'премиум аккаунт') continue;
 
       const keywordLower = normalizeText(keyword);
+      if (keywordExclusionMatch(keywordLower, combinedLower)) continue;
+
       const foundInTitle = titleLower.includes(keywordLower);
       const foundInDescription = descriptionLower.includes(keywordLower);
       if (!foundInTitle && !foundInDescription) continue;
@@ -234,7 +255,13 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
     if (config.runtimeState) {
       config.runtimeState.partialResults = allResults;
     }
-    console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
+    if (config.deduplicateResults) {
+      const uniqueResults = uniqItemsById(allResults);
+      console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
+      allResults = uniqueResults;
+    } else {
+      console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
+    }
   } else {
     let retryCount = 0;
     const maxRetries = 2;
@@ -278,6 +305,12 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
         }
         break;
       }
+    }
+
+    if (config.deduplicateResults) {
+      const uniqueResults = uniqItemsById(allResults);
+      console.log(`\n✅ Последовательная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
+      allResults = uniqueResults;
     }
   }
 

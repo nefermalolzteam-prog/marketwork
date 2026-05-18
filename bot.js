@@ -112,6 +112,14 @@ function validateConfig(config) {
     config.parallelProcessing = DEFAULT_CONFIG.parallelProcessing;
   }
 
+  if (config.deduplicateResults !== undefined && typeof config.deduplicateResults !== 'boolean') {
+    throw new Error('Ошибка: deduplicateResults должен быть boolean (true/false).');
+  }
+
+  if (config.deduplicateResults === undefined) {
+    config.deduplicateResults = false;
+  }
+
   if (config.maxConcurrentRequests !== undefined) {
     if (!Number.isInteger(config.maxConcurrentRequests) || config.maxConcurrentRequests <= 0 || config.maxConcurrentRequests > MAX_CONCURRENT_REQUESTS_LIMIT) {
       throw new Error(`Ошибка: maxConcurrentRequests должен быть числом от 1 до ${MAX_CONCURRENT_REQUESTS_LIMIT}.`);

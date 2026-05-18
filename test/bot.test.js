@@ -1,5 +1,6 @@
 import assert from 'assert';
 import { normalizeText, checkViolations, getItemId, validateConfig, hasExplicitAgeOrDateNearKeyword } from '../bot.js';
+import { uniqItemsById } from '../search.js';
 
 const sampleRules = {
   violations: {
@@ -23,6 +24,15 @@ function run() {
   assert.strictEqual(getItemId({ id: '20' }), '20');
   assert.strictEqual(getItemId({ uid: '30' }), '30');
 
+  assert.deepStrictEqual(uniqItemsById([
+    { item_id: '1', title: 'a' },
+    { item_id: '2', title: 'b' },
+    { item_id: '1', title: 'a' }
+  ]), [
+    { item_id: '1', title: 'a' },
+    { item_id: '2', title: 'b' }
+  ]);
+
   validateConfig({
     token: 'abc',
     apiBaseUrl: 'https://prod-api.lzt.market',
@@ -35,7 +45,8 @@ function run() {
     maxRetries: 3,
     retryDelayMs: 500,
     includeOrigins: [],
-    excludeOrigins: []
+    excludeOrigins: [],
+    deduplicateResults: true
   });
 
   let errorThrown = false;
@@ -80,6 +91,18 @@ function run() {
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('26 мая 2024 / Отлега', 'отлега'), true, 'Должен найти дату в формате "26 мая 2024"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('2025 | Пробный режим Reels | 2FA|  Отлега 120 дней| 500 sab |  OLD', 'отлега'), true, 'Должен найти "120 дней" с разделителем "|"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('+1 США [авторег] | Любой вход | Не использован | Отлёжка месяц (30+ дней)', 'отлёжка'), true, 'Должен найти "30+ дней" внутри скобок');
+
+  const exclusionRules = {
+    violations: {
+      overhype: {
+        name: 'Overhype',
+        keywords: ['жир']
+      }
+    }
+  };
+
+  const exclusions = checkViolations('Пожиратель жира', exclusionRules);
+  assert.strictEqual(exclusions.length, 0, 'Не должен срабатывать жир для слова "пожиратель"');
 
   console.log('Все тесты пройдены.');
 }

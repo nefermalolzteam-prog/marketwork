@@ -251,11 +251,11 @@ export async function checkAllCategories(config, rules, ask) {
     try {
       const result = await autoCheckAllListings({ ...config, category, verbose: false }, rules);
       const violations = Array.isArray(result) ? result : result.violations || [];
-      const totalCheckedInCategory = Array.isArray(result) ? violations.length : result.totalChecked || violations.length;
+      const checkedCount = Array.isArray(result) ? violations.length : Number(result.totalChecked ?? violations.length);
       const resultsWithCategory = violations.map(item => ({ ...item, category: catName }));
-      console.log(`   ✅ Проверено: ${totalCheckedInCategory}, нарушений: ${violations.length}`);
+      console.log(`   ✅ Проверено: ${checkedCount}, нарушений: ${violations.length}`);
       totalResults = mergeResults(totalResults, resultsWithCategory);
-      totalChecked += totalCheckedInCategory;
+      totalChecked += checkedCount;
     } catch (error) {
       console.error(`   ❌ Ошибка: ${error.message}`);
     }
