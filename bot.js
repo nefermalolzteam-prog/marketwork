@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { exportToCSV, exportToExcel, exportToPDF } from './export.js';
+import { exportToExcel } from './export.js';
 import { initDatabase, closeDatabase, saveCheckResults, getStatistics } from './database.js';
 import { initTelegramBot, sendViolationReport } from './telegram.js';
 import { startWebServer } from './web.js';
@@ -468,14 +468,10 @@ async function runBot() {
         }
 
         if (results.length > 0) {
-          const exportChoice = await ask('Экспортировать результаты? (csv/excel/pdf/no): ');
+          const exportChoice = await ask('Экспортировать результаты? (excel/no): ');
           const exportType = exportChoice.toLowerCase();
-          if (exportType === 'csv') {
-            await exportToCSV(results, `results_${Date.now()}.csv`);
-          } else if (exportType === 'excel') {
+          if (['excel', 'yes', 'y', 'да', 'д'].includes(exportType)) {
             await exportToExcel(results, `results_${Date.now()}.xlsx`);
-          } else if (exportType === 'pdf') {
-            await exportToPDF(results, `results_${Date.now()}.pdf`);
           }
         }
       } catch (error) {

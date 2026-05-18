@@ -5,9 +5,7 @@ yarn.lock
 # Генерируемые и временные файлы
 bot_history.db
 path_names.txt
-results_*.csv
 results_*.xlsx
-results_*.pdf
 *.db
 *.sqlite
 
