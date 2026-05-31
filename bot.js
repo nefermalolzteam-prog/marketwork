@@ -4,19 +4,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { exportToExcel } from './export.js';
-import { initDatabase, closeDatabase, saveCheckResults, getStatistics } from './database.js';
+import { initDatabase, closeDatabase, saveCheckResults, getStatistics, purgeOldRecords } from './database.js';
 import { initTelegramBot, sendViolationReport } from './telegram.js';
 import { startWebServer } from './web.js';
-import { initI18n, t } from './i18n.js';
+import { initI18n, t, setMissingKeyLogger } from './i18n.js';
 import { initializeLogging, logError } from './logger.js';
 import {
   normalizeText,
   checkViolations,
   getItemId,
   hasExplicitAgeOrDateNearKeyword,
+  isAsciiString,
   searchOnce,
   getOrderByName
 } from './search.js';
+import { chooseCategories } from './input.js';
+import { chooseOrderBy } from './input_helpers.js';
 import {
   displayResults,
   displayViolationsOnly
@@ -31,7 +34,7 @@ import {
   autoCheckAllListings,
   askOriginFilters
 } from './modes.js';
-import { DEFAULT_CONFIG, ALLOWED_ORDER_BY, MAX_CONCURRENT_REQUESTS_LIMIT, TELEGRAM_CATEGORY_ID } from './constants.js';
+import { DEFAULT_CONFIG, ALLOWED_ORDER_BY, MAX_CONCURRENT_REQUESTS_LIMIT, DEFAULT_RESULTS_PER_PAGE, DEFAULT_MAX_PAGES, DEFAULT_PAGE_DELAY_MS, DEFAULT_CATEGORY_DELAY_MS } from './constants.js';
 
 const configPath = path.resolve('config.json');
 const rulesPath = path.resolve('rules.json');
@@ -40,7 +43,23 @@ let currentResults = [];
 let currentMode = '';
 let startTime = null;
 
+function sortByViolationsFirst(items) {
+  return Array.isArray(items)
+    ? [...items].sort((a, b) => (b.violations?.length || 0) - (a.violations?.length || 0))
+    : items;
+}
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+
+function loadProjectVersion() {
+  try {
+    const packageContent = fs.readFileSync(path.resolve('package.json'), 'utf8');
+    const packageData = JSON.parse(packageContent);
+    return packageData.version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 function loadConfig() {
   if (!fs.existsSync(configPath)) {
@@ -72,22 +91,37 @@ function validateConfig(config) {
     throw new Error('Ошибка: apiBaseUrl должен быть указан в config.json.');
   }
 
+  if (config.order_by === undefined) {
+    config.order_by = 'pdate_to_down';
+  }
   if (!allowedOrders.has(config.order_by)) {
     throw new Error(`Ошибка: order_by должен быть одним из ${[...allowedOrders].join(', ')}.`);
   }
 
+  if (config.resultsPerPage === undefined) {
+    config.resultsPerPage = DEFAULT_RESULTS_PER_PAGE;
+  }
   if (!Number.isInteger(config.resultsPerPage) || config.resultsPerPage <= 0 || config.resultsPerPage > 1000) {
     throw new Error('Ошибка: resultsPerPage должен быть числом от 1 до 1000.');
   }
 
+  if (config.maxPages === undefined) {
+    config.maxPages = DEFAULT_MAX_PAGES;
+  }
   if (!Number.isInteger(config.maxPages) || config.maxPages <= 0) {
     throw new Error('Ошибка: maxPages должен быть положительным целым числом.');
   }
 
+  if (config.pageDelayMs === undefined) {
+    config.pageDelayMs = DEFAULT_PAGE_DELAY_MS;
+  }
   if (!Number.isInteger(config.pageDelayMs) || config.pageDelayMs < 0) {
     throw new Error('Ошибка: pageDelayMs должен быть положительным целым числом или 0.');
   }
 
+  if (config.categoryDelayMs === undefined) {
+    config.categoryDelayMs = DEFAULT_CATEGORY_DELAY_MS;
+  }
   if (!Number.isInteger(config.categoryDelayMs) || config.categoryDelayMs < 0) {
     throw new Error('Ошибка: categoryDelayMs должен быть положительным целым числом или 0.');
   }
@@ -128,12 +162,18 @@ function validateConfig(config) {
     config.maxConcurrentRequests = DEFAULT_CONFIG.maxConcurrentRequests;
   }
 
-  if (config.maxRetries !== undefined && (!Number.isInteger(config.maxRetries) || config.maxRetries < 0)) {
+  if (config.maxRetries === undefined) {
+    config.maxRetries = 3;
+  }
+  if (!Number.isInteger(config.maxRetries) || config.maxRetries < 0) {
     throw new Error('Ошибка: maxRetries должен быть неотрицательным целым числом.');
   }
 
-  if (config.retryDelayMs !== undefined && (!Number.isInteger(config.retryDelayMs) || config.retryDelayMs < 0)) {
-    throw new Error('Ошибка: retryDelayMs должен быть неотрицательным целым числом.');
+  if (config.retryDelayMs === undefined) {
+    config.retryDelayMs = 500;
+  }
+  if (!Number.isInteger(config.retryDelayMs) || config.retryDelayMs < 0) {
+    throw new Error('Ошибка: retryDelayMs должен быть положительным целым числом или 0.');
   }
 }
 
@@ -157,10 +197,6 @@ function loadRules() {
   }
 }
 
-function isAsciiString(value) {
-  return String(value || '').split('').every((ch) => ch.charCodeAt(0) <= 0x7f);
-}
-
 function setupGracefulShutdown(runtimeState) {
   process.on('SIGINT', () => {
     runtimeState.isInterrupted = true;
@@ -175,7 +211,7 @@ function setupGracefulShutdown(runtimeState) {
       } else {
         displayViolationsOnly(resultsToShow, 1000, null, { mode: currentMode });
       }
-      const totalViolations = resultsToShow.reduce((sum, item) => sum + item.violations.length, 0);
+      const totalViolations = resultsToShow.reduce((sum, item) => sum + (Array.isArray(item.violations) ? item.violations.length : 0), 0);
       const endTime = Date.now();
       const duration = (endTime - startTime) / 1000;
       console.log(`\n${'='.repeat(80)}`);
@@ -201,13 +237,28 @@ async function runBot() {
   config.runtimeState = runtimeState;
   setupGracefulShutdown(runtimeState);
 
-  const db = initDatabase();
+  const db = initDatabase(config);
+  if (config.dbRetentionDays && Number(config.dbRetentionDays) > 0) {
+    try {
+      await purgeOldRecords(db, Number(config.dbRetentionDays));
+    } catch (err) {
+      console.error('Ошибка при очистке старых записей БД:', err && err.message ? err.message : err);
+    }
+  }
 
   try {
     await initI18n(config.language || 'ru');
+    // register i18n missing-key logger to route to application error logs
+    try {
+      setMissingKeyLogger(logError);
+    } catch (_) {
+      // ignore if logger is not available
+    }
     const telegramBot = initTelegramBot(config.telegramToken);
     let webServer = null;
 
+    const version = loadProjectVersion();
+    console.log(`LZT Market Bot v${version}`);
     console.log(t('welcome'));
     console.log('🚀 Запуск LZT Market bot...');
     console.log('✅ Проверка нарушений правил включена\n');
@@ -230,11 +281,15 @@ async function runBot() {
       '1': 'search', '2': 'auto-check', '3': 'check-categories', '4': 'check-origins',
       '5': 'fake-personal', '6': 'telegram-years', '7': 'socialclub-search'
     };
-    const orderByMap = {
-      '1': 'pdate_to_down', '2': 'pdate_to_up', '3': 'price_to_up', '4': 'price_to_down',
-      '5': 'pdate_to_down_upload', '6': 'pdate_to_up_upload', '7': 'edate_to_up', '8': 'edate_to_down'
+    const modeMetadata = {
+      'search': { label: 'поиск по словам', fixed: false, needsOrigins: true },
+      'auto-check': { label: 'автоматическая проверка', fixed: false, needsOrigins: true },
+      'check-categories': { label: 'проверка разделов', fixed: false, needsOrigins: true },
+      'check-origins': { label: 'проверка неверного происхождения', fixed: true, needsOrigins: false },
+      'fake-personal': { label: 'поиск поддельных личных аккаунтов', fixed: true, needsOrigins: false },
+      'telegram-years': { label: 'поиск отлеги по годам в Telegram', fixed: true, needsOrigins: false },
+      'socialclub-search': { label: 'поиск Social Club в Steam и Epic Games', fixed: true, needsOrigins: false }
     };
-    const fixedSortingModes = new Set(['check-origins', 'fake-personal', 'telegram-years', 'socialclub-search']);
 
     let continueLoop = true;
     while (continueLoop) {
@@ -255,23 +310,8 @@ async function runBot() {
         return;
       }
 
-      let orderByChoice;
-      if (fixedSortingModes.has(mode)) {
-        orderByChoice = '1';
-      } else {
-        console.log('\nВыберите сортировку результатов:');
-        console.log('1. Новые сначала');
-        console.log('2. Старые сначала');
-        console.log('3. Дешевые сначала');
-        console.log('4. Дорогие сначала');
-        console.log('5. Новые загруженные');
-        console.log('6. Старые загруженные');
-        console.log('7. Недавно отредактированные');
-        console.log('8. Старые отредактированные');
-        orderByChoice = await ask('Введите номер сортировки (1-8): ');
-      }
-
-      let orderBy = orderByMap[orderByChoice];
+      // Выбор сортировки делегируется helper'у
+      const orderBy = await chooseOrderBy(mode, modeMetadata, ask, config);
       if (!orderBy) {
         console.log('❌ Неверный выбор сортировки. Выход.');
         rl.close();
@@ -289,37 +329,7 @@ async function runBot() {
       }
 
       const cats = config.categories || {};
-      let categories = [];
-      const categoryHandlers = {
-        'check-categories': async () => {
-          console.log('Доступные категории:');
-          Object.entries(cats).forEach(([id, name]) => console.log(`${id}. ${name}`));
-          console.log('all. Все категории');
-          console.log('custom. Ввести свои ID через запятую');
-          const catChoice = await ask('Выберите категории (номера через запятую, all или custom): ');
-          if (catChoice.toLowerCase() === 'all') {
-            return Object.keys(cats);
-          }
-          if (catChoice.toLowerCase() === 'custom') {
-            const customCats = await ask('Введите ID категорий через запятую: ');
-            return customCats.split(',').map(c => c.trim()).filter(c => c);
-          }
-          return catChoice.split(',').map(c => c.trim()).filter(c => cats[c] || c);
-        },
-        'check-origins': () => Object.keys(cats),
-        'fake-personal': () => Object.keys(cats),
-        'telegram-years': () => [TELEGRAM_CATEGORY_ID],
-        'socialclub-search': () => ['1', '12'],
-        'default': async () => {
-          console.log('Доступные категории:');
-          Object.entries(cats).forEach(([id, name]) => console.log(`${id}. ${name}`));
-          const categoryInput = await ask('Введите ID категории (или Enter для всех): ');
-          return [categoryInput.trim() || config.category || ''];
-        }
-      };
-
-      const handler = categoryHandlers[mode] || categoryHandlers.default;
-      categories = await handler();
+      const categories = (await chooseCategories(mode, cats, ask, config)) || [];
 
       if (mode === 'check-categories' && categories.length === 0) {
         console.log('❌ Не выбраны категории. Выход.');
@@ -329,7 +339,7 @@ async function runBot() {
 
       let includeOrigins = [];
       let excludeOrigins = [];
-      if (['search', 'auto-check', 'check-categories'].includes(mode)) {
+      if (modeMetadata[mode].needsOrigins) {
         const originFilters = await askOriginFilters(ask);
         includeOrigins = originFilters.includeOrigins;
         excludeOrigins = originFilters.excludeOrigins;
@@ -353,16 +363,14 @@ async function runBot() {
         resultsPerPage = parseInt(resultsPerPageInput, 10) || defaultResultsPerPage;
       }
 
-      if (['fake-personal', 'telegram-years', 'socialclub-search', 'check-origins'].includes(mode)) {
-        orderBy = 'pdate_to_down';
-      }
+      // orderBy определяется в chooseOrderBy (включая фиксированные режимы)
 
       const searchConfig = {
         ...config,
         mode,
         order_by: orderBy,
         keywords,
-        category: ['check-categories', 'check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'].includes(mode) ? '' : categories[0] || config.category || '',
+        category: ['check-categories', 'check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'].includes(mode) ? '' : (categories[0] || config.category || ''),
         checkCategories: ['check-categories', 'check-origins', 'fake-personal'].includes(mode) ? categories : config.checkCategories,
         includeOrigins,
         excludeOrigins,
@@ -372,16 +380,10 @@ async function runBot() {
       };
       currentMode = mode;
 
-      const modeDisplayName = mode === 'auto-check' ? 'автоматическая проверка'
-        : mode === 'search' ? 'поиск по словам'
-        : mode === 'check-origins' ? 'проверка неверного происхождения'
-        : mode === 'fake-personal' ? 'поиск поддельных личных аккаунтов'
-        : mode === 'telegram-years' ? 'поиск отлеги по годам в Telegram'
-        : mode === 'socialclub-search' ? 'поиск Social Club в Steam и Epic Games'
-        : 'проверка разделов';
+      const modeDisplayName = modeMetadata[mode]?.label || 'неизвестный режим';
       console.log(`\nРежим: ${modeDisplayName}`);
       console.log(`Сортировка: ${getOrderByName(orderBy)}`);
-      console.log('Дедупликация: выключена');
+      console.log(`Дедупликация: ${searchConfig && searchConfig.deduplicateResults ? 'включена' : (config.deduplicateResults ? 'включена' : 'выключена')}`);
       if (mode === 'search') {
         console.log(`Ключевые слова: ${keywords.join(', ')}`);
       }
@@ -413,47 +415,44 @@ async function runBot() {
       const modeHandlers = {
         'check-categories': async () => {
           const result = await checkAllCategories(searchConfig, rules, ask);
-          currentResults = result.results;
           return result.results;
         },
         'fake-personal': async () => {
-          const results = await searchFakePersonal(searchConfig, rules);
-          await displayResults(results, searchConfig.resultsPerPage || 1000, ask, { mode });
-          return results;
+          return await searchFakePersonal(searchConfig, rules);
         },
         'check-origins': async () => {
-          const results = await checkAllOrigins(searchConfig, rules);
-          await displayResults(results, searchConfig.resultsPerPage || 1000, ask, { mode });
-          return results;
+          return await checkAllOrigins(searchConfig, rules);
         },
         'socialclub-search': async () => {
-          const results = await searchSocialClubAccounts(searchConfig, rules);
-          await displayResults(results, searchConfig.resultsPerPage || 1000, ask, { mode });
-          return results;
+          return await searchSocialClubAccounts(searchConfig, rules);
         },
         'auto-check': async () => {
           const result = await autoCheckAllListings({ ...searchConfig, category: categories[0] || config.category }, rules);
-          await displayViolationsOnly(result.violations, searchConfig.resultsPerPage || 1000, ask, { mode });
-          currentResults = result.violations;
-          return result.violations;
+          return result.items || result.violations || [];
         },
         'telegram-years': async () => {
-          const results = await searchTelegramOtlegYears(searchConfig, rules);
-          await displayResults(results, searchConfig.resultsPerPage || 1000, ask, { mode });
-          return results;
+          return await searchTelegramOtlegYears(searchConfig, rules);
         },
         'search': async () => {
-          const results = await searchByKeywords(searchConfig, rules);
-          await displayViolationsOnly(results, searchConfig.resultsPerPage || 1000, ask, { mode });
-          return results;
+          return await searchByKeywords(searchConfig, rules);
         }
       };
 
       try {
         const handler = modeHandlers[mode] || modeHandlers.search;
         const results = await handler();
-        currentResults = results;
-        finalizeResults(results, startTime);
+        currentResults = results || [];
+
+        if (mode === 'search') {
+          currentResults = sortByViolationsFirst(currentResults);
+          await displayResults(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
+        } else if (mode === 'check-categories') {
+          // Режим проверки категорий уже выводит результаты внутри своей функции.
+        } else {
+          await displayViolationsOnly(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
+        }
+
+        finalizeResults(currentResults, startTime);
 
         await saveCheckResults(db, mode, searchConfig.category || 'all', results);
         const stats = await getStatistics(db);
@@ -504,7 +503,7 @@ function finalizeResults(results, startTimeValue) {
     return;
   }
 
-  const totalViolations = results.reduce((sum, item) => sum + item.violations.length, 0);
+  const totalViolations = results.reduce((sum, item) => sum + (Array.isArray(item.violations) ? item.violations.length : 0), 0);
   const endTime = Date.now();
   const duration = (endTime - startTimeValue) / 1000;
 

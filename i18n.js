@@ -40,16 +40,36 @@ const resources = {
 
 // Инициализация i18next
 export async function initI18n(language = 'ru') {
+  // fallback: missingLogger can be registered later via options
   await i18next.init({
     lng: language,
-    resources
+    resources,
+    missingKeyHandler: function(lng, ns, key) {
+      // default behavior: warn to console; if an external logger is set it will be called via t()
+      console.warn(`[i18n] Missing translation key: ${key} (lang=${lng})`);
+    }
   });
   return i18next;
 }
 
 // Функция для получения перевода
+let _missingLogger = null;
+
+export function setMissingKeyLogger(fn) {
+  if (typeof fn === 'function') _missingLogger = fn;
+}
+
 export function t(key, options = {}) {
-  return i18next.t(key, options);
+  const res = i18next.t(key, options);
+  // Если перевод отсутствует и вернулся ключ — уведомим логгер (если есть)
+  if (res === key && _missingLogger) {
+    try {
+      _missingLogger(`[i18n] Missing translation key: ${key}`);
+    } catch (_) {
+      // ignore logging errors
+    }
+  }
+  return res;
 }
 
 // Смена языка

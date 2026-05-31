@@ -1,6 +1,8 @@
 import assert from 'assert';
 import { normalizeText, checkViolations, getItemId, validateConfig, hasExplicitAgeOrDateNearKeyword } from '../bot.js';
-import { uniqItemsById } from '../search.js';
+import { uniqItemsById, hasExplicitAccountAgeOrRegistration, hasAutoregEmailMention } from '../search.js';
+import { buildSearchUrl } from '../api.js';
+import { DEFAULT_MAX_PAGES, DEFAULT_RESULTS_PER_PAGE } from '../constants.js';
 
 const sampleRules = {
   violations: {
@@ -76,6 +78,35 @@ function run() {
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега больше года', 'отлега'), true, 'Должен найти "больше года"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега с марта', 'отлега'), true, 'Должен найти "с марта"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 month', 'inactive'), true, 'Должен найти "1 month"');
+
+  const searchUrl = buildSearchUrl({
+    apiBaseUrl: 'https://prod-api.lzt.market',
+    category: '24',
+    keywords: ['отлега'],
+    resultsPerPage: 50,
+    order_by: 'price_to_up'
+  }, 1, true);
+  assert.ok(searchUrl.startsWith('https://prod-api.lzt.market/telegram?'), 'URL должен содержать путь категории Telegram');
+  assert.ok(searchUrl.includes('title=%D0%BE%D1%82%D0%BB%D0%B5%D0%B3%D0%B0'), 'URL должен содержать keyword title');
+  assert.ok(searchUrl.includes('resultsPerPage=50') || searchUrl.includes('perPage=50'), 'URL должен содержать параметр страницы');
+
+  const configWithDefaults = { token: 'abc', apiBaseUrl: 'https://prod-api.lzt.market', order_by: 'pdate_to_down' };
+  validateConfig(configWithDefaults);
+  assert.strictEqual(configWithDefaults.maxPages, DEFAULT_MAX_PAGES, 'maxPages должен устанавливать значение по умолчанию');
+  assert.strictEqual(configWithDefaults.resultsPerPage, DEFAULT_RESULTS_PER_PAGE, 'resultsPerPage должен устанавливать значение по умолчанию');
+  assert.strictEqual(configWithDefaults.pageDelayMs, 1000, 'pageDelayMs должен устанавливать значение по умолчанию');
+  assert.strictEqual(configWithDefaults.categoryDelayMs, 2000, 'categoryDelayMs должен устанавливать значение по умолчанию');
+  assert.strictEqual(configWithDefaults.maxRetries, 3, 'maxRetries должен устанавливать значение по умолчанию');
+  assert.strictEqual(configWithDefaults.retryDelayMs, 500, 'retryDelayMs должен устанавливать значение по умолчанию');
+
+  assert.strictEqual(hasExplicitAccountAgeOrRegistration('Аккаунту 6 лет 9 месяцев'), true, 'Должен найти явный возраст аккаунта');
+  assert.strictEqual(hasExplicitAccountAgeOrRegistration('Зарегистрирован 07.2019'), true, 'Должен найти дату регистрации');
+  assert.strictEqual(hasExplicitAccountAgeOrRegistration('отлега 12 лет'), false, 'Не должен считать отлегу за явный возраст аккаунта');
+  assert.strictEqual(hasAutoregEmailMention('Доступ к почте (авторег)'), true, 'Должен найти доступ к почте авторег');
+  assert.strictEqual(hasAutoregEmailMention('Почта авторег'), true, 'Должен найти почта авторег');
+  assert.strictEqual(hasAutoregEmailMention('Авторег почта'), true, 'Должен найти авторег почта');
+  assert.strictEqual(hasAutoregEmailMention('Только личный трафик'), false, 'Не должен считать личный трафик за авторег почту');
+  assert.strictEqual(/личный\s*траф(?:ик)?/.test(normalizeText('Тг акки личный траф')), true, 'Шаблон должен матчить личный траф');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1 year', 'inactive'), true, 'Должен найти "1 year"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('inactive 1,5 years', 'inactive'), true, 'Должен найти "1,5 years"');
   assert.strictEqual(hasExplicitAgeOrDateNearKeyword('отлега от 30д', 'отлега'), true, 'Должен найти сокращение "30д"');

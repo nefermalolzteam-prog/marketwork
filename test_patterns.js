@@ -1,4 +1,4 @@
-import { hasExplicitAgeOrDateNearKeyword } from './bot.js';
+import { hasExplicitAgeOrDateNearKeyword } from './search.js';
 
 const testCases = [
   ['отлега от 30д wargaming', true],

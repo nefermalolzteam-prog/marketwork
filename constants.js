@@ -1,18 +1,23 @@
+// === Конфигурация параллельной обработки ===
 export const DEFAULT_CONFIG = {
   parallelProcessing: false,
   maxConcurrentRequests: 4
 };
 
+// === Значения по умолчанию для параметров ===
 export const DEFAULT_MAX_PAGES = 1;
 export const DEFAULT_RESULTS_PER_PAGE = 1000;
 export const DEFAULT_PAGE_DELAY_MS = 1000;
 export const DEFAULT_CATEGORY_DELAY_MS = 2000;
 export const DEFAULT_CATEGORY_CONCURRENCY = 2;
 
+// === Ограничения ===
 export const MAX_CONCURRENT_REQUESTS_LIMIT = 20;
 
+// === API конфигурация ===
 export const DEFAULT_API_BASE_URL = 'https://prod-api.lzt.market';
 
+// === Допустимые варианты сортировки ===
 export const ALLOWED_ORDER_BY = new Set([
   'price_to_up',
   'price_to_down',
@@ -24,6 +29,7 @@ export const ALLOWED_ORDER_BY = new Set([
   'edate_to_down'
 ]);
 
+// === Пути категорий в API ===
 export const CATEGORY_PATHS = {
   '1': 'steam',
   '3': 'ea',
@@ -51,6 +57,7 @@ export const CATEGORY_PATHS = {
   '31': 'roblox'
 };
 
+// === Режимы без параллельной обработки ===
 export const PARALLEL_DISABLED_MODES = new Set([
   'check-origins',
   'fake-personal',
@@ -58,6 +65,7 @@ export const PARALLEL_DISABLED_MODES = new Set([
   'socialclub-search'
 ]);
 
+// === Типы происхождения аккаунтов ===
 export const ACCOUNT_ORIGINS = {
   personal: { name: 'Личный', searchTerms: ['личный', 'personal'] },
   brute: { name: 'Брут', searchTerms: ['брут', 'brute'] },
@@ -70,4 +78,18 @@ export const ACCOUNT_ORIGINS = {
   retrieve_via_support: { name: 'Восстановление через поддержку', searchTerms: ['восстановление через поддержку', 'retrieve_via_support'] }
 };
 
+// === ID специальных категорий ===
 export const TELEGRAM_CATEGORY_ID = '24';
+
+// === Дополнительные утилиты ===
+export const CATEGORY_IDS = Object.keys(CATEGORY_PATHS);
+export const SUPPORTED_CATEGORY_IDS = CATEGORY_IDS;
+
+export function getCategoryPath(categoryId) {
+  return CATEGORY_PATHS[String(categoryId)] || null;
+}
+
+export function isParallelDisabledMode(mode) {
+  return PARALLEL_DISABLED_MODES.has(String(mode));
+}
+

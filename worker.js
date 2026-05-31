@@ -1,29 +1,43 @@
 import { parentPort, workerData } from 'worker_threads';
 import { setTimeout as delay } from 'timers/promises';
+import { searchOnce } from './search.js';
 
-async function processPages(searchOnce, config, rules, itemLabel, pages) {
+async function processPages(config, rules, itemLabel, pages) {
   const results = [];
+  const delayMs = Number(config?.workerDelayMs) || 500;
   for (const page of pages) {
-    if (parentPort) {
-      parentPort.postMessage({ type: 'progress', page });
+    try {
+      if (parentPort) parentPort.postMessage({ type: 'progress', page });
+      const pageResults = await searchOnce(config, rules, page);
+      if (pageResults && Array.isArray(pageResults.results)) {
+        results.push(...pageResults.results);
+      } else if (Array.isArray(pageResults)) {
+        results.push(...pageResults);
+      }
+    } catch (err) {
+      if (parentPort) parentPort.postMessage({ type: 'pageError', page, error: err && err.message ? err.message : String(err) });
+      else console.error('Worker page error:', err && err.stack ? err.stack : err);
     }
-    const pageResults = await searchOnce(config, rules, page);
-    results.push(...pageResults.results);
-    await delay(500); // Задержка
+    try {
+      await delay(delayMs);
+    } catch (_) {
+      // ignore delay cancellation
+    }
   }
   return results;
 }
 
 async function initWorker() {
-  const { searchOnce } = await import('./bot.js');
-  const results = await processPages(searchOnce, workerData.config, workerData.rules, workerData.itemLabel, workerData.pages);
-  if (parentPort) {
-    parentPort.postMessage({ type: 'done', results });
+  try {
+    const cfg = workerData?.config || {};
+    const pages = Array.isArray(workerData?.pages) ? workerData.pages : [];
+    const results = await processPages(cfg, workerData?.rules, workerData?.itemLabel, pages);
+    if (parentPort) parentPort.postMessage({ type: 'done', results });
+    else console.log('Worker done, results:', results.length);
+  } catch (error) {
+    if (parentPort) parentPort.postMessage({ type: 'error', error: error && error.message ? error.message : String(error), stack: error.stack });
+    else console.error('Worker error:', error && error.stack ? error.stack : error);
   }
 }
 
-initWorker().catch(error => {
-  if (parentPort) {
-    parentPort.postMessage({ type: 'error', error: error.message });
-  }
-});
+initWorker();

@@ -1,4 +1,5 @@
 import { buildSearchUrl, fetchJson, isParallelMode } from './api.js';
+import { setTimeout as delay } from 'timers/promises';
 import { DEFAULT_CONFIG } from './constants.js';
 
 export function normalizeText(text) {
@@ -34,48 +35,95 @@ export function normalizePositiveInteger(value, defaultValue) {
   return Number.isInteger(num) && num > 0 ? num : defaultValue;
 }
 
+const ORDER_BY_LABELS = {
+  price_to_up: 'сначала дешевые',
+  price_to_down: 'сначала дорогие',
+  pdate_to_up: 'старые сначала',
+  pdate_to_down_upload: 'новые загруженные',
+  pdate_to_up_upload: 'старые загруженные',
+  edate_to_up: 'недавно отредактированные',
+  edate_to_down: 'старые отредактированные',
+  pdate_to_down: 'новые сначала'
+};
+
 export function getOrderByName(orderBy) {
-  switch (orderBy) {
-    case 'price_to_up':
-      return 'сначала дешевые';
-    case 'price_to_down':
-      return 'сначала дорогие';
-    case 'pdate_to_up':
-      return 'старые сначала';
-    case 'pdate_to_down_upload':
-      return 'новые загруженные';
-    case 'pdate_to_up_upload':
-      return 'старые загруженные';
-    case 'edate_to_up':
-      return 'недавно отредактированные';
-    case 'edate_to_down':
-      return 'старые отредактированные';
-    case 'pdate_to_down':
-    default:
-      return 'новые сначала';
-  }
+  return ORDER_BY_LABELS[orderBy] || ORDER_BY_LABELS.pdate_to_down;
+}
+
+const MONTH_NAMES = [
+  'янв(?:ар[ья])?',
+  'фев(?:рал[ья])?',
+  'мар(?:та?)?',
+  'апр(?:ел[ья])?',
+  'ма[йя]',
+  'июн(?:я)?',
+  'июл(?:я)?',
+  'авг(?:уста?)?',
+  'сен(?:т(?:ябр[ья])?)?',
+  'окт(?:ябр[ья])?',
+  'ноя(?:бря)?',
+  'дек(?:абр[ья])?'
+];
+
+const TIME_UNITS = [
+  'г\\.?',
+  'год(?:а|ов)?',
+  'лет',
+  'месяц(?:а|ев)?',
+  'недел(?:я|ь|и)?',
+  'дн(?:\\.|я|ей)?',
+  'день',
+  'дня',
+  'дни',
+  'дней',
+  'час(?:а|ов)?',
+  'минут(?:а|ы)?',
+  'мин',
+  'day',
+  'days',
+  'month',
+  'months',
+  'year',
+  'years',
+  'yr',
+  'yrs'
+];
+
+const TIME_CONTEXT_WORDS = ['от', 'за', 'в течение', 'через', 'по', 'с', 'на протяжении'];
+const COMPARISON_WORDS = ['больше', 'более', 'менее', 'свыше', 'около', 'примерно', 'почти'];
+
+const EXCLUSION_MAP = {
+  жир: ['пожиратель', 'пассажиров']
+};
+
+const ALPHANUMERIC_BOUNDARY = '(?:^|[^0-9A-Za-zА-Яа-яЁё])';
+const NON_ALPHANUMERIC_LOOKBEHIND = '(?<![\\p{L}\\p{N}])';
+const NON_ALPHANUMERIC_LOOKAHEAD = '(?![\\p{L}\\p{N}])';
+
+const AGE_DATE_PATTERNS = [
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}\\d{1,2}\\s*(?:${MONTH_NAMES.join('|')})(?:\\s*\\d{4}(?:\\s*г\\.?|\\s*год(?:а|ов)?)?)?${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${NON_ALPHANUMERIC_LOOKBEHIND}(?:с|в|по|на протяжении)\\s*(?:${MONTH_NAMES.join('|')})(?:\\s*\\d{4}(?:\\s*г\\.?|\\s*год(?:а|ов)?)?)?${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}\\d+\\s*(?:[.,]?\\s*\\d+)?\\+?\\s*(?:${TIME_UNITS.join('|')})${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}\\d+\\+?\\s*[а-яa-z]${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${NON_ALPHANUMERIC_LOOKBEHIND}(?:${TIME_CONTEXT_WORDS.join('|')})\\s+\\d+\\+?\\s*[а-яa-z]+`, 'iu'),
+  new RegExp(`${NON_ALPHANUMERIC_LOOKBEHIND}(?:${COMPARISON_WORDS.join('|')})\\s+\\d+\\+?\\s*(?:${TIME_UNITS.join('|')})${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${NON_ALPHANUMERIC_LOOKBEHIND}(?:${COMPARISON_WORDS.join('|')}|на протяжении)\\s+(?:${TIME_UNITS.join('|')})${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${NON_ALPHANUMERIC_LOOKBEHIND}(?:${TIME_UNITS.join('|')})${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}(?:с|в)\\s*\\d{4}${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}\\d{4}${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu'),
+  new RegExp(`${ALPHANUMERIC_BOUNDARY}\\d+\\s*[-/.]\\s*\\d+${NON_ALPHANUMERIC_LOOKAHEAD}`, 'iu')
+];
+
+function normalizeKeyword(value) {
+  return normalizeText(value).replace(/[ё]/g, 'е').replace(/[ъ]/g, '');
 }
 
 export function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
-  const normalizedText = normalizeText(textLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '');
-  const normalizedKeyword = keywordLower ? normalizeText(keywordLower).replace(/[ё]/g, 'е').replace(/[ъ]/g, '') : '';
-
-  const dateOrAgePatterns = [
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{1,2}\s*(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4}(?:\s*г\.?|\s*год(?:а|ов)?)?)?(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?<![\p{L}\p{N}])(?:с|в|по|на протяжении)\s*(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4}(?:\s*г\.?|\s*год(?:а|ов)?)?)?(?![\p{L}\p{N}])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*(?:[.,]?\s*\d+)?\+?\s*(?:г\.?|год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months|year|years|yr|yrs)(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\+?\s*[а-яa-z](?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?<![\p{L}\p{N}])(?:от|за|в течение|через|по|с|на протяжении)\s+\d+\+?\s*[а-яa-z]+/iu,
-    /(?<![\p{L}\p{N}])(?:больше|более|менее|свыше|около|примерно|почти)\s+\d+\+?\s*(?:г\.?|год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months|year|years|yr|yrs)(?![\p{L}\p{N}])/iu,
-    /(?<![\p{L}\p{N}])(?:больше|более|менее|свыше|около|примерно|почти|на протяжении)\s+(?:год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months|year|years|yr|yrs)(?![\p{L}\p{N}])/iu,
-    /(?<![\p{L}\p{N}])(?:год(?:а|ов)?|лет|месяц(?:а|ев)?|недел(?:я|ь|и)?|дн(?:\.|я|ей)?|день|дня|дни|дней|час(?:а|ов)?|минут(?:а|ы)?|мин|day|days|month|months|year|years|yr|yrs)(?![\p{L}\p{N}])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])(?:с|в)\s*\d{4}(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d{4}(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu,
-    /(?:^|[^0-9A-Za-zА-Яа-яЁё])\d+\s*[-/.]\s*\d+(?=$|[^0-9A-Za-zА-Яа-яЁё])/iu
-  ];
+  const normalizedText = normalizeKeyword(textLower);
+  const normalizedKeyword = keywordLower ? normalizeKeyword(keywordLower) : '';
 
   if (!normalizedKeyword) {
-    return dateOrAgePatterns.some((re) => re.test(normalizedText));
+    return AGE_DATE_PATTERNS.some((re) => re.test(normalizedText));
   }
 
   const keywordIndex = normalizedText.indexOf(normalizedKeyword);
@@ -85,14 +133,33 @@ export function hasExplicitAgeOrDateNearKeyword(textLower, keywordLower) {
   const searchEnd = Math.min(normalizedText.length, keywordIndex + normalizedKeyword.length + 80);
   const contextWindow = normalizedText.substring(searchStart, searchEnd);
 
-  return dateOrAgePatterns.some((re) => re.test(contextWindow));
+  return AGE_DATE_PATTERNS.some((re) => re.test(contextWindow));
+}
+
+export function hasExplicitAccountAgeOrRegistration(text) {
+  const normalized = normalizeText(text).replace(/[ё]/g, 'е');
+  const accountAgeRegex = /(?:аккаунт(?:у|а|ы|е)?|акк(?:а|у|и)?|акки?)\s*(?:[:\-–—]?\s*)?(?:\(?\s*)?\d{1,2}\s*(?:лет|года|год|месяцев|месяц|мес(?:\.|яц)?|дн(?:\.|я|ей)?|дней|час(?:а|ов)?|ч)(?:\s*\d{1,2}\s*(?:месяцев|мес(?:\.|яц)?))?/iu;
+  const registrationDateRegex = /(?:зарегистр(?:ирован|ова|уется|ано|ан)|зарегестр(?:ирован|ова|уется|ано|ан)|регистрац(?:ия|ион)|регист(?:раци|ровано)|рег\.)\s*(?:в\s*)?(?:\d{1,2}[./]\d{4}|\d{4}|(?:янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:та?)?|апр(?:ел[ья])?|ма[йя]|июн(?:я)?|июл(?:я)?|авг(?:уста?)?|сен(?:т(?:ябр[ья])?)?|окт(?:ябр[ья])?|ноя(?:бря)?|дек(?:абр[ья])?)(?:\s*\d{4})?)/iu;
+  return accountAgeRegex.test(normalized) || registrationDateRegex.test(normalized);
+}
+
+export function hasAutoregEmailMention(text) {
+  const normalized = normalizeText(text);
+  const patterns = [
+    /почт[аеыу]?\s*[-–—:]?\s*(?:\(|\[)?\s*авторег(?:\)|\])?/, 
+    /авторег\s*[-–—:]?\s*(?:\(|\[)?\s*почт[аеыу]?(?:\)|\])?/, 
+    /доступ к почт[аеыу]?\s*[-–—:]?\s*авторег/, 
+    /авторег\s*[-–—:]?\s*доступ к почте/
+  ];
+  return patterns.some((re) => re.test(normalized));
 }
 
 function keywordExclusionMatch(keywordLower, combinedLower) {
-  if (keywordLower === 'жир') {
-    return combinedLower.includes('пожиратель') || combinedLower.includes('пассажиров');
+  const exclusions = EXCLUSION_MAP[keywordLower];
+  if (!Array.isArray(exclusions) || exclusions.length === 0) {
+    return false;
   }
-  return false;
+  return exclusions.some((value) => combinedLower.includes(value));
 }
 
 function findViolations(title, description, rules, categoryId = null) {
@@ -105,11 +172,11 @@ function findViolations(title, description, rules, categoryId = null) {
   const isVPN = String(categoryId) === '19';
 
   for (const [category, violation] of Object.entries(rules.violations)) {
-    for (const keyword of violation.keywords) {
-      if (!keyword) continue;
-      if (isVPN && keyword === 'премиум аккаунт') continue;
-
-      const keywordLower = normalizeText(keyword);
+    const keywords = Array.isArray(violation.keywords) ? violation.keywords : [];
+    for (const keyword of keywords) {
+      const keywordLower = String(keyword || '').trim().toLowerCase();
+      if (!keywordLower) continue;
+      if (isVPN && keywordLower === 'премиум аккаунт') continue;
       if (keywordExclusionMatch(keywordLower, combinedLower)) continue;
 
       const foundInTitle = titleLower.includes(keywordLower);
@@ -152,15 +219,16 @@ export function formatItem(item, rules, extraProps = {}) {
   const origin = item.item_origin || item.origin || item.account_origin || item.resale_item_origin || item.itemOriginPhrase || null;
   const subOrigin = item.resale_item_origin || null;
   const combinedText = `${title} ${description}`.trim();
-  const hasAutoregEmail = normalizeText(combinedText).includes('почта авторег');
+  const hasAutoregEmail = hasAutoregEmailMention(combinedText);
+  const hasAccountAgeOrRegistration = hasExplicitAccountAgeOrRegistration(combinedText);
 
-  return { id, title, description, url, violations, origin, subOrigin, sellerLogin, hasAutoregEmail, ...extraProps };
+  return { id, title, description, url, violations, origin, subOrigin, sellerLogin, hasAutoregEmail, hasExplicitAccountAgeOrRegistration: hasAccountAgeOrRegistration, ...extraProps };
 }
 
 export async function searchOnce(config, rules, page = 1) {
   const data = await fetchJson(buildSearchUrl(config, page, true), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500)
     .catch(async (error) => {
-      const categoryPath = Boolean(config.category) && Boolean(config.category);
+      const categoryPath = Boolean(config.category);
       if (error.message.includes('HTTP 404') && categoryPath) {
         return fetchJson(buildSearchUrl(config, page, false), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500);
       }
@@ -182,7 +250,12 @@ export async function searchOnce(config, rules, page = 1) {
   return { results: parsed, rawCount: items.length };
 }
 
-export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent = 3) {
+function updateRuntimePartialResults(runtimeState, results, selector) {
+  if (!runtimeState) return;
+  runtimeState.partialResults = typeof selector === 'function' ? selector(results) : results;
+}
+
+export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent = 3, partialResultSelector = null) {
   const results = [];
   const pageDelayMs = normalizePositiveInteger(config.pageDelayMs, 500);
   let nextPageIndex = 0;
@@ -209,16 +282,14 @@ export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurr
         const { results: pageResults, rawCount } = await searchOnce(config, rules, page);
         console.log(`   ✅ Страница ${page}: ${pageResults.length} объявлений`);
         results.push(...pageResults);
-        if (config.runtimeState) {
-          config.runtimeState.partialResults = results;
-        }
+        updateRuntimePartialResults(config.runtimeState, results, partialResultSelector);
 
         if (rawCount === 0) {
           stopFurther = true;
         }
 
         if (!stopFurther && nextPageIndex < pages.length && !config.runtimeState?.isInterrupted) {
-          await new Promise(resolveDelay => setTimeout(resolveDelay, pageDelayMs));
+          await delay(pageDelayMs);
         }
       } catch (error) {
         console.error(`   ❌ Ошибка на странице ${page}: ${error.message}`);
@@ -235,11 +306,9 @@ export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurr
   });
 }
 
-export async function collectPages(config, rules, itemLabel = 'Поиск') {
+export async function collectPages(config, rules, itemLabel = 'Поиск', partialResultSelector = null) {
   let allResults = [];
-  if (config.runtimeState) {
-    config.runtimeState.partialResults = allResults;
-  }
+  updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
   const maxPages = normalizePositiveInteger(config.maxPages, 1);
   const pageDelayMs = normalizePositiveInteger(config.pageDelayMs, 1000);
   const useParallel = config.parallelProcessing && isParallelMode(config.mode);
@@ -250,15 +319,14 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
     const pages = Array.from({ length: maxPages }, (_, i) => i + 1);
     const maxConcurrent = normalizePositiveInteger(config.maxConcurrentRequests, DEFAULT_CONFIG.maxConcurrentRequests);
     console.log(`Параллельная обработка страниц: ${maxConcurrent} одновременных запросов.`);
-    const pageResults = await fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent);
+    const pageResults = await fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent, partialResultSelector);
     allResults = pageResults;
-    if (config.runtimeState) {
-      config.runtimeState.partialResults = allResults;
-    }
+    updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
     if (config.deduplicateResults) {
       const uniqueResults = uniqItemsById(allResults);
       console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
       allResults = uniqueResults;
+      updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
     } else {
       console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
     }
@@ -272,9 +340,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
         const { results, rawCount } = await searchOnce(config, rules, page);
         console.log(`   ✅ Страница ${page}: ${results.length} объявлений`);
         allResults.push(...results);
-        if (config.runtimeState) {
-          config.runtimeState.partialResults = allResults;
-        }
+        updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
         retryCount = 0;
 
         if (rawCount === 0) {
@@ -283,7 +349,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
         }
 
         if (page < maxPages && !config.runtimeState?.isInterrupted) {
-          await new Promise(resolve => setTimeout(resolve, pageDelayMs));
+          await delay(pageDelayMs);
         }
       } catch (error) {
         if (error.message === 'rate_limit') {
@@ -311,16 +377,19 @@ export async function collectPages(config, rules, itemLabel = 'Поиск') {
       const uniqueResults = uniqItemsById(allResults);
       console.log(`\n✅ Последовательная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
       allResults = uniqueResults;
+      updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
     }
   }
 
   return allResults;
 }
 
+const OTLEG_BASE_TERMS = ['отлега', 'отлёга', 'отлежка', 'отлёжка', 'inactive'];
+const OTLEG_YEAR_SUFFIXES = ['13 лет', '12 лет', '11 лет', '10 лет', '9 лет', '8 лет', '7 лет', '6 лет', '5 лет', '4 года', '3 года', '2 года'];
+const OTLEG_YEAR_QUERIES = OTLEG_BASE_TERMS.flatMap((term) => OTLEG_YEAR_SUFFIXES.map((suffix) => `${term} ${suffix}`));
+
 export function buildOtlegYearQueries() {
-  const OTLEG_BASE_TERMS = ['отлега', 'отлёга', 'отлежка', 'отлёжка', 'inactive'];
-  const OTLEG_YEAR_SUFFIXES = ['13 лет', '12 лет', '11 лет', '10 лет', '9 лет', '8 лет', '7 лет', '6 лет', '5 лет', '4 года', '3 года', '2 года'];
-  return OTLEG_BASE_TERMS.flatMap((term) => OTLEG_YEAR_SUFFIXES.map((suffix) => `${term} ${suffix}`));
+  return OTLEG_YEAR_QUERIES;
 }
 
 export async function collectPhraseSearches(config, rules, phrases, itemLabel = 'Поиск') {
@@ -338,5 +407,11 @@ export async function collectPhraseSearches(config, rules, phrases, itemLabel = 
       config.runtimeState.partialResults = allResults;
     }
   }
+
+  if (config.deduplicateResults) {
+    allResults = uniqItemsById(allResults);
+    console.log(`\n✅ Объединение фраз завершено: ${allResults.length} уникальных объявлений.`);
+  }
+
   return allResults;
 }
