@@ -123,7 +123,7 @@ async function handleHttpResponse(response, url) {
  * @param {string|Object} arg2 - Токен (строка) или объект конфигурации {token, retries, retryDelayMs, timeoutMs, maxBodyBytes}
  * @returns {Promise<Object>} Распарсенный JSON ответ
  */
-export async function fetchJson(url, arg2 = {}) {
+export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefined) {
   // Парсим параметры с обратной совместимостью
   let token;
   let maxRetries = DEFAULT_MAX_RETRIES;
@@ -133,8 +133,17 @@ export async function fetchJson(url, arg2 = {}) {
 
   if (typeof arg2 === 'string') {
     token = arg2;
+    if (Number.isInteger(arg3)) {
+      maxRetries = arg3;
+    }
+    if (Number.isInteger(arg4)) {
+      baseDelay = arg4;
+    }
   } else if (typeof arg2 === 'number') {
     maxRetries = arg2;
+    if (Number.isInteger(arg3)) {
+      baseDelay = arg3;
+    }
   } else if (typeof arg2 === 'object' && arg2 !== null) {
     token = arg2.token || arg2.auth || arg2.bearer;
     if (Number.isInteger(arg2.retries)) maxRetries = arg2.retries;
@@ -214,19 +223,20 @@ export async function fetchJson(url, arg2 = {}) {
         throw new Error('Invalid token or Authorization header: check token in config.json.');
       }
 
-      // Обработка сетевых ошибок (транзиторные)
+      // Обработка ошибок fetch/сети (транзиторные)
       const transientErrors = ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'];
-      if (transientErrors.includes(error?.code)) {
+      const isFetchFailed = error instanceof TypeError && String(error.message).toLowerCase().includes('fetch failed');
+      if (isFetchFailed || transientErrors.includes(error?.code)) {
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`Network error ${error.code}, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          logInfo(`Network error ${error?.code || error?.message}, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
           await delay(wait);
           continue;
         }
       }
 
       // Логирование и выброс последней ошибки
-      logError(`Request error: ${url} — ${error?.message || String(error)}`);
+      logError(`Request error: ${url} — ${error?.message || String(error)}${error?.code ? ` (${error.code})` : ''}`);
       throw error;
     }
   }
