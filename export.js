@@ -64,31 +64,21 @@ export async function exportToExcel(results, filePath = `results_${Date.now()}.x
       });
     });
 
-    // Write to a temporary file first, then atomically rename
     const tempPath = `${resolvedFilePath}.tmp`;
     await workbook.xlsx.writeFile(tempPath);
 
-    // Verify size and move
-    let stats;
-    try {
-      stats = fs.statSync(tempPath);
-    } catch (err) {
-      console.error('Ошибка при проверке файла экспорта:', err?.message);
-      throw err;
-    }
-
+    const stats = await fs.promises.stat(tempPath);
     if (stats.size > maxSize) {
       console.warn(`⚠️  Размер файла экспорта ${Math.round(stats.size / 1024)} KB превышает порог ${Math.round(maxSize / 1024)} KB.`);
     }
 
     try {
-      fs.renameSync(tempPath, resolvedFilePath);
+      await fs.promises.rename(tempPath, resolvedFilePath);
     } catch (err) {
-      // Попытка копирования как fallback
       try {
-        const data = fs.readFileSync(tempPath);
-        fs.writeFileSync(filePath, data);
-        fs.unlinkSync(tempPath);
+        const fileData = await fs.promises.readFile(tempPath);
+        await fs.promises.writeFile(resolvedFilePath, fileData);
+        await fs.promises.unlink(tempPath);
       } catch (innerErr) {
         console.error('Ошибка при перемещении файла экспорта:', innerErr?.message);
         throw innerErr;

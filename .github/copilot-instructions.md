@@ -12,17 +12,17 @@
 - Поиск Social Club в Steam и Epic Games
 
 **Язык:** JavaScript (Node.js)  
-**Версия Node.js:** >=18.0.0  
+**Версия Node.js:** >=26.3.0  
 **Тип модуля:** ES Modules (type: "module")  
 **Версия проекта:** 2.2.0  
 **Лицензия:** MIT
 
 ## 🛠️ Технический стек
 
-- **Runtime:** Node.js 18+ (встроенные API: fetch, readline, fs, path, timers/promises)
+- **Runtime:** Node.js 26.3.0 (встроенные API: fetch, readline, fs, path, timers/promises)
 - **Асинхронность:** async/await, Promise
 - **Файловая система:** fs (встроенный)
-- **Сетевые запросы:** fetch API (встроенный в Node.js 18+)
+- **Сетевые запросы:** fetch API (встроенный в Node.js 26.3.0)
 - **CLI:** readline (встроенный)
 - **Тестирование:** assert (встроенный)
 - **Модули:** ES Modules (не CommonJS)
@@ -54,7 +54,7 @@ lzt-market-bot/
 ### 1. Установка
 ```bash
 # Нет внешних зависимостей!
-# Просто нужен Node.js 18+
+# Просто нужен Node.js 26.3.0
 node --version  # Проверка версии
 ```
 
@@ -388,7 +388,7 @@ npm test
 - `timers/promises` - асинхронные задержки
 - `assert` - юнит-тесты
 - `url` - обработка URL (import.meta.url)
-- Встроенный `fetch` для HTTP запросов (Node.js 18+)
+- Встроенный `fetch` для HTTP запросов (Node.js 26.3.0)
 
 ## 🎨 Стиль кода
 
@@ -408,5 +408,5 @@ npm test
 ## 🔄 Версионирование
 
 - **Текущая версия:** 2.0.0
-- **Поддержка Node.js:** 18+
+- **Поддержка Node.js:** 26.3.0
 - **Совместимость:** Полная совместимость с современными браузерными API (fetch, Promise, async/await)

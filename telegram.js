@@ -1,26 +1,46 @@
-import TelegramBot from 'node-telegram-bot-api';
-
 const MAX_TELEGRAM_MESSAGE_LENGTH = 4096;
 const TELEGRAM_MESSAGE_DELAY_MS = 800;
 
 function sanitizeText(text, maxLen = 4000) {
   if (!text) return '';
-  // Remove control characters and trim
   let s = String(text).replace(/\p{C}/gu, ' ').trim();
   if (s.length > maxLen) s = s.slice(0, maxLen - 3) + '...';
   return s;
 }
 
-// Инициализация бота (токен из config)
+function buildTelegramUrl(token, method) {
+  return `https://api.telegram.org/bot${token}/${method}`;
+}
+
+async function sendTelegramMessage(bot, chatId, text) {
+  if (!bot || !bot.token || !chatId || !text) return;
+
+  const response = await fetch(buildTelegramUrl(bot.token, 'sendMessage'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: String(chatId),
+      text,
+      disable_web_page_preview: true
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Telegram API error ${response.status}: ${body}`);
+  }
+
+  return response.json();
+}
+
 export function initTelegramBot(token) {
   if (!token) {
     console.log('Telegram токен не указан, уведомления отключены');
     return null;
   }
-  return new TelegramBot(token, { polling: false });
+  return { token };
 }
 
-// Отправка отчёта о нарушениях (короткий свод)
 export async function sendViolationReport(bot, chatId, results, mode) {
   if (!bot || !chatId || !Array.isArray(results)) return;
 
@@ -38,16 +58,13 @@ export async function sendViolationReport(bot, chatId, results, mode) {
   }
 
   try {
-    await bot.sendMessage(chatId, sanitizeText(message, MAX_TELEGRAM_MESSAGE_LENGTH), {
-      disable_web_page_preview: true
-    });
+    await sendTelegramMessage(bot, chatId, sanitizeText(message, MAX_TELEGRAM_MESSAGE_LENGTH));
     console.log('Отчёт отправлен в Telegram');
   } catch (error) {
     console.error('Ошибка отправки в Telegram:', error?.message || error);
   }
 }
 
-// Отправка детального отчёта (с разбиением и throttling)
 export async function sendDetailedReport(bot, chatId, results) {
   if (!bot || !chatId || !Array.isArray(results)) return;
 
@@ -72,9 +89,7 @@ export async function sendDetailedReport(bot, chatId, results) {
 
   for (const chunk of chunks) {
     try {
-      await bot.sendMessage(chatId, sanitizeText(chunk, MAX_TELEGRAM_MESSAGE_LENGTH), {
-        disable_web_page_preview: true
-      });
+      await sendTelegramMessage(bot, chatId, sanitizeText(chunk, MAX_TELEGRAM_MESSAGE_LENGTH));
       await new Promise(resolve => setTimeout(resolve, TELEGRAM_MESSAGE_DELAY_MS));
     } catch (error) {
       console.error('Ошибка отправки детального отчёта:', error?.message || error);
