@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
+import crypto from 'crypto';
 
 const configPath = path.resolve('config.json');
 if (!fs.existsSync(configPath)) {
@@ -12,6 +14,15 @@ const base = (config.apiBaseUrl || 'https://prod-api.lzt.market').replace(/\/+$/
 const url = `${base}/?page=1`;
 const token = config.token;
 
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false,
+  secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+  minVersion: 'TLSv1',
+  maxVersion: 'TLSv1.3',
+  honorCipherOrder: true,
+  ciphers: 'ALL'
+});
+
 console.log('Request URL:', url);
 
 (async () => {
@@ -21,7 +32,7 @@ console.log('Request URL:', url);
     const headers = { Accept: 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const res = await fetch(url, { headers, signal: controller.signal });
+    const res = await fetch(url, { headers, signal: controller.signal, agent: httpsAgent });
     clearTimeout(timeoutId);
 
     console.log('Status:', res.status, res.statusText);
@@ -31,7 +42,7 @@ console.log('Request URL:', url);
     try {
       const json = JSON.parse(text);
       console.log('Body (JSON):', JSON.stringify(json, null, 2));
-    } catch (e) {
+    } catch {
       console.log('Body (text):', text.slice(0, 2000));
     }
   } catch (err) {

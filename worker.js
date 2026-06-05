@@ -20,7 +20,7 @@ async function processPages(config, rules, itemLabel, pages) {
     }
     try {
       await delay(delayMs);
-    } catch (_) {
+    } catch {
       // ignore delay cancellation
     }
   }

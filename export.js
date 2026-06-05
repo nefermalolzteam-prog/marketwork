@@ -74,7 +74,7 @@ export async function exportToExcel(results, filePath = `results_${Date.now()}.x
 
     try {
       await fs.promises.rename(tempPath, resolvedFilePath);
-    } catch (err) {
+    } catch {
       try {
         const fileData = await fs.promises.readFile(tempPath);
         await fs.promises.writeFile(resolvedFilePath, fileData);

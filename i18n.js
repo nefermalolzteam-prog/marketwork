@@ -65,7 +65,7 @@ export function t(key, options = {}) {
   if (res === key && _missingLogger) {
     try {
       _missingLogger(`[i18n] Missing translation key: ${key}`);
-    } catch (_) {
+    } catch {
       // ignore logging errors
     }
   }

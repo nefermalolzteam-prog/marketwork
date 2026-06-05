@@ -2,6 +2,8 @@
   "token": "ВАШ_ТОКЕН",
   "_comment": "Настройки бота - режим выбирается интерактивно при запуске",
   "apiBaseUrl": "https://prod-api.lzt.market",
+  "apiAlternateUrl": "https://api.lzt.market",
+  "_comment_apiAlternateUrl": "Второй API хост для резервного подключения",
   "apiDocs": [
     "https://lolzteam.readme.io/reference/information",
     "https://lzt-market.readme.io/reference/information"

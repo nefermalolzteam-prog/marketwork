@@ -1,10 +1,46 @@
 import { setTimeout as delay } from 'timers/promises';
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
 import { logInfo, logError } from './logger.js';
 import { CATEGORY_PATHS, PARALLEL_DISABLED_MODES } from './constants.js';
+
+const GLOBAL_HTTPS_AGENT = new https.Agent({
+  rejectUnauthorized: false
+});
+
+async function createProxyAgent(proxyUrl) {
+  if (!proxyUrl) return null;
+  try {
+    const module = await import('https-proxy-agent');
+    return new module.HttpsProxyAgent(proxyUrl);
+  } catch (error) {
+    const missingPackage = error?.code === 'ERR_MODULE_NOT_FOUND'
+      || error?.code === 'MODULE_NOT_FOUND'
+      || String(error?.message || '').includes("Cannot find package 'https-proxy-agent'");
+
+    if (missingPackage) {
+      throw new Error('https-proxy-agent is required for HTTPS proxy support; install it or unset HTTPS_PROXY/http_proxy.');
+    }
+    throw error;
+  }
+}
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30s
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY = 500;
+
+function getUrlWithAlternateBase(url, alternateBase) {
+  try {
+    const original = new URL(url);
+    const base = new URL(alternateBase);
+    const basePath = base.pathname.replace(/\/+$/, '');
+    const fullPath = `${basePath}${original.pathname}`.replace(/\/\/+/, '/');
+    return new URL(`${fullPath}${original.search}`, `${base.protocol}//${base.hostname}${base.port ? `:${base.port}` : ''}`).toString();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Проверяет, позволяет ли режим параллельную обработку
@@ -84,41 +120,8 @@ export function buildSearchUrl(config, page = 1, usePath = true) {
 }
 
 /**
- * Обрабатывает HTTP ошибки с логированием
- * @param {Response} response - Response объект
- * @param {string} url - URL запроса
- * @returns {Promise<Object>} JSON ответ если успех, иначе throw
- * @private
- */
-async function handleHttpResponse(response, url) {
-  if (response.status === 429) {
-    throw new Error('rate_limit');
-  }
-
-  if (response.status >= 500 && response.status < 600) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
-  }
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
-  }
-
-  // Parse JSON safely
-  try {
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      logInfo(`Non-JSON Content-Type: ${contentType} for ${url}`);
-    }
-    return await response.json();
-  } catch (jsonError) {
-    throw new Error(`Invalid JSON response: ${jsonError.message}`);
-  }
-}
-
-/**
  * Выполняет HTTP запрос с автоматическим retry и обработкой ошибок
+ * Использует встроенный https модуль вместо fetch для совместимости с Windows
  * @param {string} url - URL для запроса
  * @param {string|Object} arg2 - Токен (строка) или объект конфигурации {token, retries, retryDelayMs, timeoutMs, maxBodyBytes}
  * @returns {Promise<Object>} Распарсенный JSON ответ
@@ -130,6 +133,8 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
   let baseDelay = DEFAULT_BASE_DELAY;
   let timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
   let maxBodyBytes = null;
+  let alternateUrl = null;
+  let proxyUrl = null;
 
   if (typeof arg2 === 'string') {
     token = arg2;
@@ -150,6 +155,9 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
     if (Number.isInteger(arg2.retryDelayMs)) baseDelay = arg2.retryDelayMs;
     if (Number.isInteger(arg2.timeoutMs)) timeoutMs = arg2.timeoutMs;
     if (Number.isInteger(arg2.maxBodyBytes)) maxBodyBytes = arg2.maxBodyBytes;
+    if (typeof arg2.alternateUrl === 'string') alternateUrl = arg2.alternateUrl;
+    if (typeof arg2.proxyUrl === 'string') proxyUrl = arg2.proxyUrl;
+    if (typeof arg2.proxy === 'string' && !proxyUrl) proxyUrl = arg2.proxy;
   }
 
   // Валидируем параметры
@@ -159,40 +167,31 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      
-      const headers = { Accept: 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
-
-      const response = await fetch(url, { headers, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-
-      // Проверяем размер ответа (опционально)
-      try {
-        const contentLength = response.headers.get('content-length');
-        if (contentLength && maxBodyBytes && Number(contentLength) > maxBodyBytes) {
-          throw new Error(`Response too large: ${contentLength} bytes`);
-        }
-      } catch (hdrErr) {
-        // Игнорируем ошибки парсинга заголовков
-      }
-
-      // Обработка ответа и ошибок HTTP
-      return await handleHttpResponse(response, url);
-      
+      const response = await makeHttpRequest(url, token, timeoutMs, maxBodyBytes, proxyUrl);
+      return response;
     } catch (error) {
       const isLastAttempt = attempt >= maxRetries;
       const shouldRetry = !isLastAttempt;
-      
-      // Обработка timeout
-      if (error?.name === 'AbortError') {
-        if (shouldRetry) {
-          const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`Request timeout, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
-          await delay(wait);
-          continue;
+
+      // Immediate TLS/EPROTO fallback: если при попытке соединения получили ошибки
+      // связанные с TLS, попробуем сначала alternateUrl (если задан), затем HTTP.
+      try {
+        const errMsgLower = String(error?.message || '').toLowerCase();
+        const isTlsProtocolError = error?.code === 'EPROTO' || errMsgLower.includes('wrong version number') || errMsgLower.includes('tls_validate_record_header') || errMsgLower.includes('write eproto');
+        if (isTlsProtocolError && alternateUrl) {
+          const fallbackUrl = getUrlWithAlternateBase(url, alternateUrl);
+          if (fallbackUrl) {
+            const msg = `TLS error ${error?.code || ''}; switching to alternate API immediately: ${fallbackUrl}`;
+            console.warn(msg);
+            logInfo(msg);
+            url = fallbackUrl;
+            alternateUrl = null;
+            continue;
+          }
         }
-        throw new Error('timeout');
+        // HTTP fallback disabled, остаёмся на HTTPS; если alternateUrl задан, попробуем его.
+      } catch {
+        // Ignore any unexpected errors while checking fallback conditions
       }
 
       // Обработка rate limit (429)
@@ -217,16 +216,35 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
         throw error;
       }
 
-      // Обработка ошибок токена
-      if (error instanceof TypeError && String(error.message).includes('ByteString')) {
-        logError(`Request error: ${url} — invalid Authorization header or non-ASCII token.`);
-        throw new Error('Invalid token or Authorization header: check token in config.json.');
+      // Обработка timeout
+      if (error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout')) {
+        if (shouldRetry) {
+          const wait = baseDelay * Math.pow(2, attempt);
+          logInfo(`Request timeout, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          await delay(wait);
+          continue;
+        }
+        throw new Error('timeout');
       }
 
-      // Обработка ошибок fetch/сети (транзиторные)
-      const transientErrors = ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'];
-      const isFetchFailed = error instanceof TypeError && String(error.message).toLowerCase().includes('fetch failed');
-      if (isFetchFailed || transientErrors.includes(error?.code)) {
+      // Обработка ошибок сети (транзиторные)
+      const transientErrors = ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPROTO'];
+      const transientMessages = ['fetch failed', 'tls_validate_record_header', 'wrong version number', 'SSL routines'];
+      const messageText = String(error?.message || '').toLowerCase();
+      const isNetworkError = transientErrors.includes(error?.code) || transientMessages.some(msg => messageText.includes(msg));
+      if (isNetworkError) {
+        if (shouldRetry && alternateUrl) {
+          const fallbackUrl = getUrlWithAlternateBase(url, alternateUrl);
+          if (fallbackUrl) {
+            const msg = `Network error ${error?.code || error?.message}; switching to alternate API and retrying ${attempt + 1}/${maxRetries}: ${fallbackUrl}`;
+            console.warn(msg);
+            logInfo(msg);
+            url = fallbackUrl;
+            alternateUrl = null;
+            continue;
+          }
+        }
+
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
           logInfo(`Network error ${error?.code || error?.message}, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
@@ -240,4 +258,93 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
       throw error;
     }
   }
+}
+
+/**
+ * Выполняет HTTPS запрос через встроенный https модуль
+ * @private
+ * @param {string} url - URL для запроса
+ * @param {string} token - JWT токен
+ * @param {number} timeoutMs - Таймаут в миллисекундах
+ * @returns {Promise<Object>} Распарсенный JSON ответ
+ */
+async function makeHttpRequest(url, token, timeoutMs, maxBodyBytes = null, proxyUrl = null) {
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const defaultPort = isHttps ? 443 : 80;
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || defaultPort,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Connection': 'close',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: timeoutMs
+    };
+
+    if (isHttps) {
+      options.rejectUnauthorized = false; // Отключаем проверку сертификата для Windows
+      options.agent = proxyUrl ? await createProxyAgent(proxyUrl) : GLOBAL_HTTPS_AGENT;
+    }
+
+    if (token) {
+      options.headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return new Promise((resolve, reject) => {
+      const client = isHttps ? https : http;
+      const req = client.get(options, (res) => {
+      let data = '';
+      let receivedBytes = 0;
+
+      res.on('data', (chunk) => {
+        receivedBytes += chunk.length;
+        if (maxBodyBytes !== null && receivedBytes > maxBodyBytes) {
+          req.destroy(new Error('response_too_large'));
+          return;
+        }
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          // Обработка rate limit
+          if (res.statusCode === 429) {
+            reject(new Error('rate_limit'));
+            return;
+          }
+
+          // Обработка ошибок сервера
+          if (res.statusCode >= 500 && res.statusCode < 600) {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
+
+          // Обработка прочих HTTP ошибок
+          if (res.statusCode < 200 || res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
+
+          // Парсим JSON
+          const result = JSON.parse(data);
+          resolve(result);
+        } catch (error) {
+          reject(new Error(`Invalid JSON response: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+  });
 }

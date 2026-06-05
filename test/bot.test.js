@@ -63,7 +63,7 @@ function run() {
       categoryDelayMs: 100,
       checkCategories: ['1']
     });
-  } catch (error) {
+  } catch {
     errorThrown = true;
   }
   assert.strictEqual(errorThrown, true, 'validateConfig должен выбросить ошибку для пустого token');

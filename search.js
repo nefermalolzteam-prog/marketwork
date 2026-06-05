@@ -226,11 +226,18 @@ export function formatItem(item, rules, extraProps = {}) {
 }
 
 export async function searchOnce(config, rules, page = 1) {
-  const data = await fetchJson(buildSearchUrl(config, page, true), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500)
+  const requestOptions = {
+    token: config.token,
+    retries: config.maxRetries ?? 3,
+    retryDelayMs: config.retryDelayMs ?? 500,
+    alternateUrl: config.apiAlternateUrl
+  };
+
+  const data = await fetchJson(buildSearchUrl(config, page, true), requestOptions)
     .catch(async (error) => {
       const categoryPath = Boolean(config.category);
       if (error.message.includes('HTTP 404') && categoryPath) {
-        return fetchJson(buildSearchUrl(config, page, false), config.token, config.maxRetries ?? 3, config.retryDelayMs ?? 500);
+        return fetchJson(buildSearchUrl(config, page, false), requestOptions);
       }
       throw error;
     });

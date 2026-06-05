@@ -33,7 +33,7 @@ function rotateLogIfNeeded(filePath, maxBytes) {
     const archiveName = `${filePath}.${timestamp}.bak`;
     try {
       fs.renameSync(filePath, archiveName);
-    } catch (err) {
+    } catch {
       // fallback: copy and truncate
       try {
         const data = fs.readFileSync(filePath);
@@ -66,7 +66,7 @@ function appendLog(filePath, message) {
     // If logging fails, output to console as last resort
     try {
       console.error('Ошибка записи лога:', err?.message || err);
-    } catch (_) {
+    } catch {
       // suppress any further errors
     }
   }
@@ -105,7 +105,7 @@ export function getLogFilesInfo() {
       }
     });
     return info;
-  } catch (err) {
+  } catch {
     return [];
   }
 }

@@ -76,6 +76,15 @@ function loadConfig() {
   }
 }
 
+function isValidUrl(value) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validateConfig(config) {
   const allowedOrders = ALLOWED_ORDER_BY;
 
@@ -89,6 +98,15 @@ function validateConfig(config) {
 
   if (!config.apiBaseUrl || typeof config.apiBaseUrl !== 'string') {
     throw new Error('Ошибка: apiBaseUrl должен быть указан в config.json.');
+  }
+  if (!isValidUrl(config.apiBaseUrl)) {
+    throw new Error('Ошибка: apiBaseUrl должен быть действительным URL.');
+  }
+
+  if (config.apiAlternateUrl !== undefined) {
+    if (typeof config.apiAlternateUrl !== 'string' || !isValidUrl(config.apiAlternateUrl)) {
+      throw new Error('Ошибка: apiAlternateUrl должен быть действительным URL или отсутствовать.');
+    }
   }
 
   if (config.order_by === undefined) {
@@ -251,7 +269,7 @@ async function runBot() {
     // register i18n missing-key logger to route to application error logs
     try {
       setMissingKeyLogger(logError);
-    } catch (_) {
+    } catch {
       // ignore if logger is not available
     }
     const telegramBot = initTelegramBot(config.telegramToken);

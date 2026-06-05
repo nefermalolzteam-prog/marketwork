@@ -1,5 +1,18 @@
+import https from 'https';
+
 const MAX_TELEGRAM_MESSAGE_LENGTH = 4096;
 const TELEGRAM_MESSAGE_DELAY_MS = 800;
+let telegramAgent = null;
+
+const TELEGRAM_HTTPS_AGENT = new https.Agent({
+  rejectUnauthorized: false
+});
+
+async function getTelegramAgent() {
+  if (telegramAgent) return telegramAgent;
+  telegramAgent = TELEGRAM_HTTPS_AGENT;
+  return telegramAgent;
+}
 
 function sanitizeText(text, maxLen = 4000) {
   if (!text) return '';
@@ -17,6 +30,7 @@ async function sendTelegramMessage(bot, chatId, text) {
 
   const response = await fetch(buildTelegramUrl(bot.token, 'sendMessage'), {
     method: 'POST',
+    agent: await getTelegramAgent(),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: String(chatId),

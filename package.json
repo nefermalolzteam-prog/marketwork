@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node bot.js",
     "check-syntax": "node --check api.js bot.js constants.js database.js display.js export.js i18n.js inspect_paths.js logger.js modes.js search.js telegram.js test_patterns.js web.js worker.js test/bot.test.js",
-    "lint": "npm run check-syntax && eslint . --ext .js",
+    "lint": "npm run check-syntax && eslint --config .eslintrc.cjs . --ext .js",
     "test": "node test/bot.test.js && node test/input_parsing.test.js && node test/order_parsing.test.js",
     "test:watch": "node --watch test/bot.test.js"
   },
@@ -27,6 +27,7 @@
   "dependencies": {
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "https-proxy-agent": "^2.2.3",
     "i18next": "^26.3.0",
     "sqlite3": "^6.0.1"
   },
