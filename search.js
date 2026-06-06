@@ -230,7 +230,8 @@ export async function searchOnce(config, rules, page = 1) {
     token: config.token,
     retries: config.maxRetries ?? 3,
     retryDelayMs: config.retryDelayMs ?? 500,
-    alternateUrl: config.apiAlternateUrl
+    alternateUrl: config.apiAlternateUrl,
+    proxyUrl: config.proxyUrl
   };
 
   const data = await fetchJson(buildSearchUrl(config, page, true), requestOptions)
@@ -367,7 +368,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск', part
             page--;
             continue;
           }
-          console.error('❌ Превышено максимальное количество повторов при rate limit.');
+          console.error('❌ Превышено максимальное количество повторов при лимите запросов.');
           break;
         }
         if (error.message.includes('HTTP 404')) {

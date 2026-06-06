@@ -98,7 +98,7 @@ export function startWebServer(results, port = 3000) {
   });
 
   // Обработчик ошибок сервера
-  server.on('error', (err) => console.error('Web server error:', err && err.message ? err.message : err));
+  server.on('error', (err) => console.error('Ошибка веб-сервера:', err && err.message ? err.message : err));
 
   return server;
 }

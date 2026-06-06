@@ -7,7 +7,7 @@ import { DEFAULT_MAX_PAGES, DEFAULT_RESULTS_PER_PAGE } from '../constants.js';
 const sampleRules = {
   violations: {
     test_violation: {
-      name: 'Test violation',
+      name: 'Тестовое нарушение',
       keywords: ['foo', 'bar']
     }
   }
@@ -87,7 +87,7 @@ function run() {
     order_by: 'price_to_up'
   }, 1, true);
   assert.ok(searchUrl.startsWith('https://prod-api.lzt.market/telegram?'), 'URL должен содержать путь категории Telegram');
-  assert.ok(searchUrl.includes('title=%D0%BE%D1%82%D0%BB%D0%B5%D0%B3%D0%B0'), 'URL должен содержать keyword title');
+  assert.ok(searchUrl.includes('title=%D0%BE%D1%82%D0%BB%D0%B5%D0%B3%D0%B0'), 'URL должен содержать параметр title');
   assert.ok(searchUrl.includes('resultsPerPage=50') || searchUrl.includes('perPage=50'), 'URL должен содержать параметр страницы');
 
   const configWithDefaults = { token: 'abc', apiBaseUrl: 'https://prod-api.lzt.market', order_by: 'pdate_to_down' };

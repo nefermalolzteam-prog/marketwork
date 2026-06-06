@@ -20,7 +20,7 @@ async function createProxyAgent(proxyUrl) {
       || String(error?.message || '').includes("Cannot find package 'https-proxy-agent'");
 
     if (missingPackage) {
-      throw new Error('https-proxy-agent is required for HTTPS proxy support; install it or unset HTTPS_PROXY/http_proxy.');
+      throw new Error('Для поддержки HTTPS-прокси требуется пакет https-proxy-agent; установите его или снимите настройки HTTPS_PROXY/http_proxy.');
     }
     throw error;
   }
@@ -120,7 +120,7 @@ export function buildSearchUrl(config, page = 1, usePath = true) {
 }
 
 /**
- * Выполняет HTTP запрос с автоматическим retry и обработкой ошибок
+ * Выполняет HTTP запрос с автоматическим повтором и обработкой ошибок
  * Использует встроенный https модуль вместо fetch для совместимости с Windows
  * @param {string} url - URL для запроса
  * @param {string|Object} arg2 - Токен (строка) или объект конфигурации {token, retries, retryDelayMs, timeoutMs, maxBodyBytes}
@@ -160,6 +160,10 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
     if (typeof arg2.proxy === 'string' && !proxyUrl) proxyUrl = arg2.proxy;
   }
 
+  if (!proxyUrl) {
+    proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || null;
+  }
+
   // Валидируем параметры
   maxRetries = Math.max(0, Number.isInteger(maxRetries) ? maxRetries : DEFAULT_MAX_RETRIES);
   baseDelay = Math.max(0, Number.isInteger(baseDelay) ? baseDelay : DEFAULT_BASE_DELAY);
@@ -173,15 +177,15 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
       const isLastAttempt = attempt >= maxRetries;
       const shouldRetry = !isLastAttempt;
 
-      // Immediate TLS/EPROTO fallback: если при попытке соединения получили ошибки
-      // связанные с TLS, попробуем сначала alternateUrl (если задан), затем HTTP.
+      // Незамедлительный fallback при ошибке TLS/EPROTO: если при попытке соединения получены ошибки
+      // связанные с TLS, сначала попробуем alternateUrl (если задан), затем HTTP.
       try {
         const errMsgLower = String(error?.message || '').toLowerCase();
         const isTlsProtocolError = error?.code === 'EPROTO' || errMsgLower.includes('wrong version number') || errMsgLower.includes('tls_validate_record_header') || errMsgLower.includes('write eproto');
         if (isTlsProtocolError && alternateUrl) {
           const fallbackUrl = getUrlWithAlternateBase(url, alternateUrl);
           if (fallbackUrl) {
-            const msg = `TLS error ${error?.code || ''}; switching to alternate API immediately: ${fallbackUrl}`;
+            const msg = `Ошибка TLS ${error?.code || ''}; немедленно переключаемся на альтернативный API: ${fallbackUrl}`;
             console.warn(msg);
             logInfo(msg);
             url = fallbackUrl;
@@ -189,16 +193,16 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
             continue;
           }
         }
-        // HTTP fallback disabled, остаёмся на HTTPS; если alternateUrl задан, попробуем его.
+        // HTTP-fallback отключён, остаёмся на HTTPS; если alternateUrl задан, попробуем его.
       } catch {
-        // Ignore any unexpected errors while checking fallback conditions
+        // Игнорируем неожиданные ошибки при проверке условий fallback
       }
 
-      // Обработка rate limit (429)
+      // Обработка лимита запросов (429)
       if (error?.message === 'rate_limit') {
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`429 rate limit, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          logInfo(`Лимит запросов 429, повтор ${attempt + 1}/${maxRetries} через ${wait} мс: ${url}`);
           await delay(wait);
           continue;
         }
@@ -209,7 +213,7 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
       if (error?.message?.startsWith('HTTP 5')) {
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`Server error, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          logInfo(`Ошибка сервера, повтор ${attempt + 1}/${maxRetries} через ${wait} мс: ${url}`);
           await delay(wait);
           continue;
         }
@@ -220,7 +224,7 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
       if (error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout')) {
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`Request timeout, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          logInfo(`Таймаут запроса, повтор ${attempt + 1}/${maxRetries} через ${wait} мс: ${url}`);
           await delay(wait);
           continue;
         }
@@ -236,7 +240,7 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
         if (shouldRetry && alternateUrl) {
           const fallbackUrl = getUrlWithAlternateBase(url, alternateUrl);
           if (fallbackUrl) {
-            const msg = `Network error ${error?.code || error?.message}; switching to alternate API and retrying ${attempt + 1}/${maxRetries}: ${fallbackUrl}`;
+            const msg = `Сетевая ошибка ${error?.code || error?.message}; переключаемся на альтернативный API и повторяем ${attempt + 1}/${maxRetries}: ${fallbackUrl}`;
             console.warn(msg);
             logInfo(msg);
             url = fallbackUrl;
@@ -247,14 +251,14 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
 
         if (shouldRetry) {
           const wait = baseDelay * Math.pow(2, attempt);
-          logInfo(`Network error ${error?.code || error?.message}, retry ${attempt + 1}/${maxRetries} after ${wait} ms: ${url}`);
+          logInfo(`Сетевая ошибка ${error?.code || error?.message}, повтор ${attempt + 1}/${maxRetries} через ${wait} мс: ${url}`);
           await delay(wait);
           continue;
         }
       }
 
       // Логирование и выброс последней ошибки
-      logError(`Request error: ${url} — ${error?.message || String(error)}${error?.code ? ` (${error.code})` : ''}`);
+      logError(`Ошибка запроса: ${url} — ${error?.message || String(error)}${error?.code ? ` (${error.code})` : ''}`);
       throw error;
     }
   }
@@ -311,7 +315,7 @@ async function makeHttpRequest(url, token, timeoutMs, maxBodyBytes = null, proxy
 
       res.on('end', () => {
         try {
-          // Обработка rate limit
+          // Обработка лимита запросов
           if (res.statusCode === 429) {
             reject(new Error('rate_limit'));
             return;
@@ -333,7 +337,7 @@ async function makeHttpRequest(url, token, timeoutMs, maxBodyBytes = null, proxy
           const result = JSON.parse(data);
           resolve(result);
         } catch (error) {
-          reject(new Error(`Invalid JSON response: ${error.message}`));
+          reject(new Error(`Неверный JSON ответ: ${error.message}`));
         }
       });
     });

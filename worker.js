@@ -16,7 +16,7 @@ async function processPages(config, rules, itemLabel, pages) {
       }
     } catch (err) {
       if (parentPort) parentPort.postMessage({ type: 'pageError', page, error: err && err.message ? err.message : String(err) });
-      else console.error('Worker page error:', err && err.stack ? err.stack : err);
+      else console.error('Ошибка страницы рабочего потока:', err && err.stack ? err.stack : err);
     }
     try {
       await delay(delayMs);
@@ -33,10 +33,10 @@ async function initWorker() {
     const pages = Array.isArray(workerData?.pages) ? workerData.pages : [];
     const results = await processPages(cfg, workerData?.rules, workerData?.itemLabel, pages);
     if (parentPort) parentPort.postMessage({ type: 'done', results });
-    else console.log('Worker done, results:', results.length);
+    else console.log('Рабочий поток завершён, результатов:', results.length);
   } catch (error) {
     if (parentPort) parentPort.postMessage({ type: 'error', error: error && error.message ? error.message : String(error), stack: error.stack });
-    else console.error('Worker error:', error && error.stack ? error.stack : error);
+    else console.error('Ошибка рабочего потока:', error && error.stack ? error.stack : error);
   }
 }
 

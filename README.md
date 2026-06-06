@@ -1,6 +1,6 @@
 # LZT Market Search Bot
 
-Утилитный CLI-бот для поиска объявлений и проверки нарушений на LZT Market. Работает на Node.js 26.3.0 и поддерживает 7 режимов поиска, SQLite-историю, Telegram-уведомления, веб-просмотр и экспорт в Excel.
+Консольный бот для поиска объявлений и проверки нарушений на LZT Market. Работает на Node.js 26.3.0 и поддерживает 7 режимов поиска, локальную историю в SQLite, Telegram-уведомления, веб-просмотр и экспорт в Excel.
 
 ## ⚡ Основные возможности
 
@@ -12,7 +12,7 @@
 - Отправка уведомлений в Telegram
 - Параллельная обработка страниц в режимах 1-3
 - Экспорт результатов в Excel (results_*.xlsx)
-- Graceful shutdown при Ctrl+C
+- Корректное завершение (graceful shutdown) при Ctrl+C
 - apiDocs и rulesDocs в конфиге
 
 ## Установка
@@ -20,12 +20,13 @@
 1. Установите Node.js 26.3.0.
 2. Скопируйте шаблон конфигурации:
     cp config.example.json config.json
+    # На Windows используйте: copy config.example.json config.json
 3. Заполните token и другие параметры в config.json.
 4. config.json уже добавлен в .gitignore.
 
 ## Запуск
 
-### NPM команды
+### NPM-команды
 
     npm start              # Запустить бот
     npm test               # Запустить тесты
@@ -56,7 +57,7 @@
 | **2** | Автоматическая проверка объявлений в одной категории |
 | **3** | Проверка выбранных категорий на нарушения |
 | **4** | Ищет заголовки с упоминанием происхождения, но с другим origin |
-| **5** | Ищет объявления с личный в названии, origin != personal |
+| **5** | Ищет объявления с "личный" в названии, origin != personal |
 | **6** | Поиск отлежки/inactive с указанием лет в Telegram |
 | **7** | Поиск GTA/RDR без доступа к Social Club в Steam/Epic |
 
@@ -79,9 +80,13 @@
 
 ### Основные параметры config.json
 
+В `config.json` можно указать `proxyUrl` для HTTPS-прокси и `apiAlternateUrl` для запасного API-хоста на случай сетевых ошибок или недоступности основного сервера.
+
     {
       "token": "ВАШ_JWT_ТОКЕН",
       "apiBaseUrl": "https://prod-api.lzt.market",
+      "proxyUrl": "",
+      "apiAlternateUrl": "",
       "apiDocs": [
         "https://lolzteam.readme.io/reference/information",
         "https://lzt-market.readme.io/reference/information"

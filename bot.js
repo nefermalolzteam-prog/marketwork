@@ -109,6 +109,15 @@ function validateConfig(config) {
     }
   }
 
+  if (config.proxyUrl !== undefined) {
+    if (typeof config.proxyUrl !== 'string') {
+      throw new Error('Ошибка: proxyUrl должен быть строкой или отсутствовать.');
+    }
+    if (config.proxyUrl.trim() && !isValidUrl(config.proxyUrl)) {
+      throw new Error('Ошибка: proxyUrl должен быть действительным URL или пустой строкой.');
+    }
+  }
+
   if (config.order_by === undefined) {
     config.order_by = 'pdate_to_down';
   }
@@ -266,11 +275,11 @@ async function runBot() {
 
   try {
     await initI18n(config.language || 'ru');
-    // register i18n missing-key logger to route to application error logs
+    // Регистрируем логгер для отсутствующих ключей i18n, чтобы ошибки шли в общий лог
     try {
       setMissingKeyLogger(logError);
     } catch {
-      // ignore if logger is not available
+      // Игнорируем, если логгер недоступен
     }
     const telegramBot = initTelegramBot(config.telegramToken);
     let webServer = null;

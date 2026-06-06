@@ -24,7 +24,7 @@ const ROW_SEPARATOR = '-'.repeat(80);
 const PAGE_LINE = '='.repeat(80);
 const NEXT_COMMANDS = new Set(['next', 'n', 'далее', 'вперед']);
 const PREV_COMMANDS = new Set(['prev', 'p', 'назад']);
-const EXIT_COMMANDS = new Set(['exit', 'quit', 'q', 'выход', 'exit']);
+const EXIT_COMMANDS = new Set(['exit', 'quit', 'q', 'выход']);
 
 function getOriginName(originCode, subOriginCode = null) {
   if (!originCode) return 'неизвестно';
@@ -101,7 +101,7 @@ async function renderPagedItems(items, pageSize, ask, renderItem) {
       return;
     }
 
-    const command = String(await ask('Введите команду (next/prev/exit): ')).trim().toLowerCase();
+    const command = String(await ask('Введите команду (next/prev/exit или далее/назад/выход): ')).trim().toLowerCase();
     if (!command || EXIT_COMMANDS.has(command)) {
       pageActive = false;
       continue;
@@ -125,7 +125,7 @@ async function renderPagedItems(items, pageSize, ask, renderItem) {
       continue;
     }
 
-    console.log('Неизвестная команда. Введите next, prev или exit.');
+    console.log('Неизвестная команда. Введите next, prev, exit, далее, назад или выход.');
   }
 }
 
@@ -190,7 +190,7 @@ async function displayItems(title, items, maxDisplay = 1000, ask, renderItem, lo
   try {
     await renderPagedItems(safeItems, maxDisplay, ask, renderItem);
   } catch (err) {
-    logError(`displayItems render failed: ${err && err.message ? err.message : err}`);
+    logError(`Не удалось отобразить результаты: ${err && err.message ? err.message : err}`);
     console.error('Ошибка при отображении результатов:', err && err.message ? err.message : err);
   }
   console.log();

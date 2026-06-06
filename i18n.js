@@ -40,13 +40,13 @@ const resources = {
 
 // Инициализация i18next
 export async function initI18n(language = 'ru') {
-  // fallback: missingLogger can be registered later via options
+  // Резервное поведение: missingLogger может быть зарегистрирован позже через опции
   await i18next.init({
     lng: language,
     resources,
     missingKeyHandler: function(lng, ns, key) {
-      // default behavior: warn to console; if an external logger is set it will be called via t()
-      console.warn(`[i18n] Missing translation key: ${key} (lang=${lng})`);
+      // Поведение по умолчанию: предупреждаем в консоль; если внешний логгер установлен, он будет вызван через t()
+      console.warn(`[i18n] Отсутствует ключ перевода: ${key} (lang=${lng})`);
     }
   });
   return i18next;
@@ -64,9 +64,9 @@ export function t(key, options = {}) {
   // Если перевод отсутствует и вернулся ключ — уведомим логгер (если есть)
   if (res === key && _missingLogger) {
     try {
-      _missingLogger(`[i18n] Missing translation key: ${key}`);
+      _missingLogger(`[i18n] Отсутствует ключ перевода: ${key}`);
     } catch {
-      // ignore logging errors
+      // Игнорируем ошибки логирования
     }
   }
   return res;

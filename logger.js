@@ -34,13 +34,13 @@ function rotateLogIfNeeded(filePath, maxBytes) {
     try {
       fs.renameSync(filePath, archiveName);
     } catch {
-      // fallback: copy and truncate
+      // В резервном режиме: копируем и обнуляем файл
       try {
         const data = fs.readFileSync(filePath);
         fs.writeFileSync(archiveName, data);
         fs.truncateSync(filePath, 0);
       } catch (inner) {
-        // if rotation completely fails, log to console
+        // если ротация полностью не удалась, выводим ошибку в консоль
         console.error('Не удалось произвести ротацию логов:', inner?.message || inner);
       }
     }
@@ -63,11 +63,11 @@ function appendLog(filePath, message) {
     rotateLogIfNeeded(filePath, MAX_LOG_SIZE);
     fs.appendFileSync(filePath, `${message}\n`, 'utf8');
   } catch (err) {
-    // If logging fails, output to console as last resort
+    // Если запись лога не удалась, выводим ошибку в консоль в крайнем случае
     try {
       console.error('Ошибка записи лога:', err?.message || err);
     } catch {
-      // suppress any further errors
+      // Игнорируем последующие ошибки
     }
   }
 }

@@ -41,7 +41,7 @@ async function sendTelegramMessage(bot, chatId, text) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Telegram API error ${response.status}: ${body}`);
+    throw new Error(`Ошибка Telegram API ${response.status}: ${body}`);
   }
 
   return response.json();

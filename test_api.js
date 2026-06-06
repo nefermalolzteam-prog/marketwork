@@ -5,7 +5,7 @@ import crypto from 'crypto';
 
 const configPath = path.resolve('config.json');
 if (!fs.existsSync(configPath)) {
-  console.error('config.json not found');
+  console.error('Файл config.json не найден. Скопируйте config.example.json в config.json и заполните токен.');
   process.exit(1);
 }
 
@@ -23,7 +23,7 @@ const httpsAgent = new https.Agent({
   ciphers: 'ALL'
 });
 
-console.log('Request URL:', url);
+console.log('Запрос URL:', url);
 
 (async () => {
   try {
@@ -35,19 +35,19 @@ console.log('Request URL:', url);
     const res = await fetch(url, { headers, signal: controller.signal, agent: httpsAgent });
     clearTimeout(timeoutId);
 
-    console.log('Status:', res.status, res.statusText);
+    console.log('Статус:', res.status, res.statusText);
     console.log('Content-Type:', res.headers.get('content-type'));
 
     const text = await res.text();
     try {
       const json = JSON.parse(text);
-      console.log('Body (JSON):', JSON.stringify(json, null, 2));
+      console.log('Тело (JSON):', JSON.stringify(json, null, 2));
     } catch {
-      console.log('Body (text):', text.slice(0, 2000));
+      console.log('Тело (text):', text.slice(0, 2000));
     }
   } catch (err) {
-    console.error('Request error:', err && err.message ? err.message : err);
+    console.error('Ошибка запроса:', err && err.message ? err.message : err);
     console.error(err);
-    if (err?.name === 'AbortError') console.error('Timeout or aborted');
+    if (err?.name === 'AbortError') console.error('Таймаут или прервано');
   }
 })();

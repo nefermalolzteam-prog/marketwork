@@ -72,7 +72,7 @@ export function purgeOldRecords(db, days = 30) {
     
     const safeDays = Math.max(1, Number.isInteger(days) && days > 0 ? days : 30);
     
-    // Используем параметризованный запрос вместо string interpolation
+    // Используем параметризованный запрос вместо интерполяции строк
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
       
@@ -159,7 +159,7 @@ export function saveCheckResults(db, mode, category, results) {
               if (index >= results.length) {
                 stmt.finalize((err) => {
                   if (err) {
-                    logError(`Ошибка finalizing statement: ${err.message}`);
+                    logError(`Ошибка финализации подготовленного запроса: ${err.message}`);
                     db.run('ROLLBACK');
                     return reject(err);
                   }
@@ -205,7 +205,7 @@ export function saveCheckResults(db, mode, category, results) {
                   processResultsSequentially(index + 1);
                 });
               } catch (err) {
-                logError(`Exception при сохранении объявления ${id}: ${err && err.message ? err.message : err}`);
+                logError(`Исключение при сохранении объявления ${id}: ${err && err.message ? err.message : err}`);
                 skippedCount++;
                 processResultsSequentially(index + 1);
               }

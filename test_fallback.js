@@ -7,8 +7,8 @@ try{
   const basePath=b.pathname.replace(/\/+$/,'');
   const fullPath = `${basePath}${o.pathname}`.replace(/\/\/+/,'/');
   const u=new URL(`${fullPath}${o.search}`, `${b.protocol}//${b.hostname}${b.port?`:${b.port}`:''}`);
-  console.log(u.toString());
+  console.log('Сформированный fallback URL:', u.toString());
 } catch(e) {
-  console.error(e);
+  console.error('Ошибка формирования fallback URL:', e);
   process.exit(1);
 }

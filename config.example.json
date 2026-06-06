@@ -2,6 +2,8 @@
   "token": "ВАШ_ТОКЕН",
   "_comment": "Настройки бота - режим выбирается интерактивно при запуске",
   "apiBaseUrl": "https://prod-api.lzt.market",
+  "proxyUrl": "",
+  "_comment_proxyUrl": "URL HTTPS-прокси для исходящих API-запросов. Если пусто, используется HTTPS_PROXY / https_proxy / HTTP_PROXY / http_proxy.",
   "apiAlternateUrl": "https://api.lzt.market",
   "_comment_apiAlternateUrl": "Второй API хост для резервного подключения",
   "apiDocs": [

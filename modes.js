@@ -164,7 +164,7 @@ export async function searchByKeywords(config, rules) {
     console.log(`\n📊 Всего найдено объявлений: ${Array.isArray(results) ? results.length : 0}`);
     return Array.isArray(results) ? results : [];
   } catch (err) {
-    logError(`searchByKeywords failed: ${err && err.message ? err.message : err}`);
+    logError(`searchByKeywords не выполнен: ${err && err.message ? err.message : err}`);
     return [];
   }
 }
@@ -206,7 +206,7 @@ export async function searchFakePersonal(config, rules) {
     console.log(`\n📊 Всего найдено объявлений: ${results.length}`);
     return results;
   } catch (err) {
-    logError(`searchFakePersonal failed: ${err && err.message ? err.message : err}`);
+    logError(`searchFakePersonal не выполнен: ${err && err.message ? err.message : err}`);
     return [];
   }
 }
@@ -256,7 +256,7 @@ export async function checkAllOrigins(config, rules) {
     console.log(`\n📊 Всего найдено объявлений: ${totalResults.length}`);
     return totalResults;
   } catch (err) {
-    logError(`checkAllOrigins failed: ${err && err.message ? err.message : err}`);
+    logError(`checkAllOrigins не выполнен: ${err && err.message ? err.message : err}`);
     return [];
   }
 }
@@ -271,7 +271,7 @@ export async function searchTelegramOtlegYears(config, rules) {
     console.log(`\n📊 Всего найдено объявлений: ${filteredResults.length}`);
     return filteredResults;
   } catch (err) {
-    logError(`searchTelegramOtlegYears failed: ${err && err.message ? err.message : err}`);
+    logError(`searchTelegramOtlegYears не выполнен: ${err && err.message ? err.message : err}`);
     return [];
   }
 }
@@ -301,7 +301,7 @@ export async function searchSocialClubAccounts(config, rules) {
     console.log(`\n📊 Всего найдено объявлений: ${allResults.length}`);
     return allResults;
   } catch (err) {
-    logError(`searchSocialClubAccounts failed: ${err && err.message ? err.message : err}`);
+    logError(`searchSocialClubAccounts не выполнен: ${err && err.message ? err.message : err}`);
     return [];
   }
 }
@@ -350,7 +350,7 @@ export async function checkAllCategories(config, rules, ask) {
     const duration = (endTime - checkStartTime) / 1000;
     return { results: totalResults, totalChecked, duration };
   } catch (err) {
-    logError(`checkAllCategories failed: ${err && err.message ? err.message : err}`);
+    logError(`checkAllCategories не выполнен: ${err && err.message ? err.message : err}`);
     return { results: [], totalChecked: 0, duration: 0 };
   }
 }
@@ -383,7 +383,7 @@ export async function autoCheckAllListings(config, rules) {
       totalChecked: Array.isArray(results) ? results.length : 0
     };
   } catch (err) {
-    logError(`autoCheckAllListings failed: ${err && err.message ? err.message : err}`);
+    logError(`autoCheckAllListings не выполнен: ${err && err.message ? err.message : err}`);
     return { violations: [], totalChecked: 0 };
   }
 }
