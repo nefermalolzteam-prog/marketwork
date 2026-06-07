@@ -3,7 +3,7 @@
   "_comment": "Настройки бота - режим выбирается интерактивно при запуске",
   "apiBaseUrl": "https://prod-api.lzt.market",
   "proxyUrl": "",
-  "_comment_proxyUrl": "URL HTTPS-прокси для исходящих API-запросов. Если пусто, используется HTTPS_PROXY / https_proxy / HTTP_PROXY / http_proxy.",
+  "_comment_proxyUrl": "URL прокси для исходящих API-запросов. Поддерживаются https://, socks4://, socks4a://, socks5://, socks5h://. Если пусто, используется HTTPS_PROXY / https_proxy.",
   "apiAlternateUrl": "https://api.lzt.market",
   "_comment_apiAlternateUrl": "Второй API хост для резервного подключения",
   "apiDocs": [
@@ -38,6 +38,8 @@
   "_comment_logFile": "Имя файла для логов событий",
   "errorLogFile": "errors.log",
   "_comment_errorLogFile": "Имя файла для логов ошибок",
+  "allowHttpFallback": false,
+  "_comment_allowHttpFallback": "HTTP fallback отключён; все API-запросы выполняются по HTTPS для поддержки единой безопасной схемы.",
   "includeOrigins": [],
   "_comment_includeOrigins": "origin[] фильтр по умолчанию",
   "excludeOrigins": [],

@@ -29,6 +29,7 @@
     "express": "^5.2.1",
     "https-proxy-agent": "^2.2.4",
     "i18next": "^26.3.0",
+    "socks-proxy-agent": "^5.0.1",
     "sqlite3": "^6.0.1"
   },
   "overrides": {

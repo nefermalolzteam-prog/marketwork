@@ -90,6 +90,16 @@ function run() {
   assert.ok(searchUrl.includes('title=%D0%BE%D1%82%D0%BB%D0%B5%D0%B3%D0%B0'), 'URL должен содержать параметр title');
   assert.ok(searchUrl.includes('resultsPerPage=50') || searchUrl.includes('perPage=50'), 'URL должен содержать параметр страницы');
 
+  const rootSearchUrl = buildSearchUrl({
+    apiBaseUrl: 'https://prod-api.lzt.market',
+    category: '24',
+    keywords: ['отлега'],
+    resultsPerPage: 50,
+    order_by: 'price_to_up'
+  }, 1, false);
+  assert.ok(rootSearchUrl.startsWith('https://prod-api.lzt.market/?'), 'URL должен использовать корневой путь при usePath=false');
+  assert.ok(!rootSearchUrl.includes('category_id='), 'URL не должен содержать параметр category_id при поиске по корневому пути');
+
   const configWithDefaults = { token: 'abc', apiBaseUrl: 'https://prod-api.lzt.market', order_by: 'pdate_to_down' };
   validateConfig(configWithDefaults);
   assert.strictEqual(configWithDefaults.maxPages, DEFAULT_MAX_PAGES, 'maxPages должен устанавливать значение по умолчанию');

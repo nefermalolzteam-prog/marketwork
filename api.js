@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'timers/promises';
+import { execFile } from 'node:child_process';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -6,24 +7,114 @@ import { logInfo, logError } from './logger.js';
 import { CATEGORY_PATHS, PARALLEL_DISABLED_MODES } from './constants.js';
 
 const GLOBAL_HTTPS_AGENT = new https.Agent({
-  rejectUnauthorized: false
+  rejectUnauthorized: false,
+  minVersion: 'TLSv1.2',
+  maxVersion: 'TLSv1.3'
 });
 
 async function createProxyAgent(proxyUrl) {
   if (!proxyUrl) return null;
-  try {
-    const module = await import('https-proxy-agent');
-    return new module.HttpsProxyAgent(proxyUrl);
-  } catch (error) {
-    const missingPackage = error?.code === 'ERR_MODULE_NOT_FOUND'
-      || error?.code === 'MODULE_NOT_FOUND'
-      || String(error?.message || '').includes("Cannot find package 'https-proxy-agent'");
 
-    if (missingPackage) {
-      throw new Error('Для поддержки HTTPS-прокси требуется пакет https-proxy-agent; установите его или снимите настройки HTTPS_PROXY/http_proxy.');
+  const parsed = new URL(proxyUrl);
+  const protocol = parsed.protocol.toLowerCase();
+
+  if (protocol === 'https:' || protocol === 'http:') {
+    try {
+      const module = await import('https-proxy-agent');
+      const AgentClass = module.HttpsProxyAgent || module.default || module;
+      return new AgentClass(proxyUrl);
+    } catch (error) {
+      const missingPackage = error?.code === 'ERR_MODULE_NOT_FOUND'
+        || error?.code === 'MODULE_NOT_FOUND'
+        || String(error?.message || '').includes("Cannot find package 'https-proxy-agent'");
+
+      if (missingPackage) {
+        throw new Error('Для поддержки HTTPS-прокси требуется пакет https-proxy-agent; установите его или снимите настройки HTTPS_PROXY / https_proxy.');
+      }
+      throw error;
     }
-    throw error;
   }
+
+  if (protocol === 'socks4:' || protocol === 'socks4a:' || protocol === 'socks5:' || protocol === 'socks5h:') {
+    try {
+      const module = await import('socks-proxy-agent');
+      const AgentClass = module.SocksProxyAgent || module.default || module;
+      return new AgentClass(proxyUrl);
+    } catch (error) {
+      const missingPackage = error?.code === 'ERR_MODULE_NOT_FOUND'
+        || error?.code === 'MODULE_NOT_FOUND'
+        || String(error?.message || '').includes("Cannot find package 'socks-proxy-agent'");
+
+      if (missingPackage) {
+        throw new Error('Для поддержки SOCKS-прокси требуется пакет socks-proxy-agent; установите его или снимите настройки proxyUrl / HTTPS_PROXY / https_proxy.');
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(`Unsupported proxy protocol: ${protocol}. Поддерживаются https://, socks4://, socks4a://, socks5://, socks5h://.`);
+}
+
+async function makePowerShellRequest(url, token, timeoutMs, _maxBodyBytes = null, proxyUrl = null) {
+  if (process.platform !== 'win32') {
+    throw new Error('PowerShell fallback доступен только на Windows.');
+  }
+
+  const headers = { Accept: 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const headersLiteral = `@{${Object.entries(headers)
+    .map(([name, value]) => `${name}='${String(value).replace(/'/g, "''")}'`)
+    .join('; ')}}`;
+  const proxyArg = proxyUrl ? `-Proxy '${String(proxyUrl).replace(/'/g, "''")}'` : '';
+  const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
+  const script = `$headers = ${headersLiteral}; $response = Invoke-WebRequest -Uri '${String(url).replace(/'/g, "''")}' -Method GET -Headers $headers ${proxyArg} -TimeoutSec ${timeoutSec}; Write-Host $response.StatusCode; Write-Host '---BODY---'; Write-Output $response.Content`;
+
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: timeoutMs + 5000, windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`PowerShell fallback failed: ${error.message}${stderr ? `: ${stderr.trim()}` : ''}`));
+        return;
+      }
+
+      const parts = stdout.split(/\r?\n/);
+      const separatorIndex = parts.findIndex(line => line === '---BODY---');
+      if (separatorIndex < 0) {
+        reject(new Error('PowerShell fallback вернул неожиданный вывод.'));
+        return;
+      }
+
+      const statusText = parts[0].trim();
+      const body = parts.slice(separatorIndex + 1).join('\n').trim();
+      const statusCode = Number(statusText);
+
+      if (!statusText || Number.isNaN(statusCode)) {
+        reject(new Error(`PowerShell fallback вернул некорректный статус: ${statusText}`));
+        return;
+      }
+
+      if (statusCode === 429) {
+        reject(new Error('rate_limit'));
+        return;
+      }
+      if (statusCode >= 500 && statusCode < 600) {
+        reject(new Error(`HTTP ${statusCode}: ${body}`));
+        return;
+      }
+      if (statusCode < 200 || statusCode >= 400) {
+        reject(new Error(`HTTP ${statusCode}: ${body}`));
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch (parseError) {
+        reject(new Error(`PowerShell fallback неверный JSON: ${parseError.message}`));
+      }
+    });
+  });
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30s
@@ -41,7 +132,6 @@ function getUrlWithAlternateBase(url, alternateBase) {
     return null;
   }
 }
-
 /**
  * Проверяет, позволяет ли режим параллельную обработку
  * @param {string} mode - Режим работы
@@ -90,11 +180,8 @@ function buildSearchParams(config) {
     config.excludeOrigins.forEach(origin => params.append('not_origin[]', origin));
   }
 
-  // Категория (если не используется путь)
-  if (config.category && !config.usePath) {
-    params.append('category', String(config.category));
-  }
-
+  // Категория поддерживается только через путь категории.
+  // Корневой путь API не документирует параметр category_id.
   return params;
 }
 
@@ -161,7 +248,7 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
   }
 
   if (!proxyUrl) {
-    proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || null;
+    proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || null;
   }
 
   // Валидируем параметры
@@ -169,6 +256,7 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
   baseDelay = Math.max(0, Number.isInteger(baseDelay) ? baseDelay : DEFAULT_BASE_DELAY);
   timeoutMs = Math.max(1, Number.isInteger(timeoutMs) ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS);
 
+  let windowsFallbackTried = false;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await makeHttpRequest(url, token, timeoutMs, maxBodyBytes, proxyUrl);
@@ -193,7 +281,18 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
             continue;
           }
         }
-        // HTTP-fallback отключён, остаёмся на HTTPS; если alternateUrl задан, попробуем его.
+
+        if (isTlsProtocolError && process.platform === 'win32' && !windowsFallbackTried) {
+          windowsFallbackTried = true;
+          try {
+            return await makePowerShellRequest(url, token, timeoutMs, maxBodyBytes, proxyUrl);
+          } catch (fallbackError) {
+            const fallbackMsg = `PowerShell TLS fallback не сработал: ${fallbackError.message}`;
+            console.warn(fallbackMsg);
+            logInfo(fallbackMsg);
+          }
+        }
+        // HTTP fallback отключён, все запросы к API должны оставаться по HTTPS.
       } catch {
         // Игнорируем неожиданные ошибки при проверке условий fallback
       }
@@ -289,9 +388,14 @@ async function makeHttpRequest(url, token, timeoutMs, maxBodyBytes = null, proxy
       timeout: timeoutMs
     };
 
-    if (isHttps) {
+    if (proxyUrl) {
+      options.agent = await createProxyAgent(proxyUrl);
+      if (isHttps) {
+        options.rejectUnauthorized = false; // Отключаем проверку сертификата для Windows
+      }
+    } else if (isHttps) {
       options.rejectUnauthorized = false; // Отключаем проверку сертификата для Windows
-      options.agent = proxyUrl ? await createProxyAgent(proxyUrl) : GLOBAL_HTTPS_AGENT;
+      options.agent = GLOBAL_HTTPS_AGENT;
     }
 
     if (token) {

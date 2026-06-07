@@ -85,6 +85,14 @@ function isValidUrl(value) {
   }
 }
 
+function isHttpsUrl(value) {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function validateConfig(config) {
   const allowedOrders = ALLOWED_ORDER_BY;
 
@@ -102,10 +110,16 @@ function validateConfig(config) {
   if (!isValidUrl(config.apiBaseUrl)) {
     throw new Error('Ошибка: apiBaseUrl должен быть действительным URL.');
   }
+  if (!isHttpsUrl(config.apiBaseUrl)) {
+    throw new Error('Ошибка: apiBaseUrl должен начинаться с https://.');
+  }
 
   if (config.apiAlternateUrl !== undefined) {
     if (typeof config.apiAlternateUrl !== 'string' || !isValidUrl(config.apiAlternateUrl)) {
       throw new Error('Ошибка: apiAlternateUrl должен быть действительным URL или отсутствовать.');
+    }
+    if (!isHttpsUrl(config.apiAlternateUrl)) {
+      throw new Error('Ошибка: apiAlternateUrl должен начинаться с https://.');
     }
   }
 
@@ -115,6 +129,13 @@ function validateConfig(config) {
     }
     if (config.proxyUrl.trim() && !isValidUrl(config.proxyUrl)) {
       throw new Error('Ошибка: proxyUrl должен быть действительным URL или пустой строкой.');
+    }
+    if (config.proxyUrl.trim()) {
+      const proxyProtocol = new URL(config.proxyUrl).protocol.toLowerCase();
+      const allowedProxyProtocols = new Set(['https:', 'http:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:']);
+      if (!allowedProxyProtocols.has(proxyProtocol)) {
+        throw new Error('Ошибка: proxyUrl должен начинаться с https://, socks4://, socks4a://, socks5:// или socks5h://.');
+      }
     }
   }
 

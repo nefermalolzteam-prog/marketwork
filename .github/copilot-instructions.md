@@ -70,7 +70,7 @@ cp config.example.json config.json
 
 ### 2.1 Важные параметры config.json
 - `token` — Bearer token для API LZT Market.
-- `proxyUrl` — URL HTTPS-прокси для исходящих API-запросов. Если пусто, используется `HTTPS_PROXY` / `https_proxy` / `HTTP_PROXY` / `http_proxy`.
+- `proxyUrl` — URL HTTPS-прокси для исходящих API-запросов. Если пусто, используется `HTTPS_PROXY` / `https_proxy`.
 - `apiBaseUrl` — основной API-хост (`https://prod-api.lzt.market`).
 - `apiAlternateUrl` — резервный API-хост на случай сетевых ошибок.
 - `maxPages` и `resultsPerPage` — контролируют глубину поиска и размер страницы.
@@ -81,7 +81,7 @@ cp config.example.json config.json
 
 ### 2.2 Резервный прокси и сетевые настройки
 - `proxyUrl` имеет приоритет над переменными окружения.
-- Если прокси не задан, бот автоматически учитывает стандартные переменные окружения `HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY`, `http_proxy`.
+- Если прокси не задан, бот автоматически учитывает стандартные переменные окружения `HTTPS_PROXY`, `https_proxy`.
 - `apiAlternateUrl` используется как fallback при сетевых ошибках, связанных с TLS, Cloudflare или отсутствием доступа к основному хосту.
 
 ### 3. Запуск
