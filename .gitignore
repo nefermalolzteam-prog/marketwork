@@ -6,6 +6,7 @@ yarn.lock
 bot_history.db
 path_names.txt
 results_*.xlsx
+result-*.xlsx
 *.db
 *.sqlite
 

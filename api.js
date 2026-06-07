@@ -120,6 +120,37 @@ async function makePowerShellRequest(url, token, timeoutMs, _maxBodyBytes = null
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30s
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY = 500;
+const RATE_LIMIT_THRESHOLD = 290; // запросов до паузы
+const RATE_LIMIT_PAUSE_MS = 60000; // 1 минута
+
+// Глобальный счётчик запросов с временем окна
+let requestCounter = { count: 0, windowStart: Date.now() };
+
+function resetRequestCounterIfNeeded() {
+  const now = Date.now();
+  const elapsed = now - requestCounter.windowStart;
+  if (elapsed >= 60000) { // Окно 1 минута
+    requestCounter = { count: 0, windowStart: now };
+  }
+}
+
+async function checkAndPauseIfRateLimitApproaching() {
+  resetRequestCounterIfNeeded();
+  if (requestCounter.count >= RATE_LIMIT_THRESHOLD) {
+    const waitMs = Math.max(0, RATE_LIMIT_PAUSE_MS - (Date.now() - requestCounter.windowStart));
+    if (waitMs > 0) {
+      console.warn(`⚠️  Лимит запросов близко (${requestCounter.count}/${RATE_LIMIT_THRESHOLD}). Пауза на ${Math.ceil(waitMs / 1000)} сек...`);
+      logInfo(`Проактивная пауза при лимите запросов: ${requestCounter.count}/${RATE_LIMIT_THRESHOLD}`);
+      await delay(waitMs + 1000);
+      requestCounter = { count: 0, windowStart: Date.now() };
+    }
+  }
+}
+
+function incrementRequestCounter() {
+  resetRequestCounterIfNeeded();
+  requestCounter.count += 1;
+}
 
 function getUrlWithAlternateBase(url, alternateBase) {
   try {
@@ -259,6 +290,12 @@ export async function fetchJson(url, arg2 = {}, arg3 = undefined, arg4 = undefin
   let windowsFallbackTried = false;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      // Проверяем и делаем паузу если близко к лимиту
+      if (attempt === 0) {
+        await checkAndPauseIfRateLimitApproaching();
+        incrementRequestCounter();
+      }
+
       const response = await makeHttpRequest(url, token, timeoutMs, maxBodyBytes, proxyUrl);
       return response;
     } catch (error) {
@@ -454,5 +491,207 @@ async function makeHttpRequest(url, token, timeoutMs, maxBodyBytes = null, proxy
       req.destroy();
       reject(new Error('Request timeout'));
     });
+  });
+}
+
+/**
+ * Выполняет батч-запрос: несколько операций в одном HTTP запросе
+ * Максимум 10 операций на батч. Результаты объединяются.
+ * @param {string[]} urls - Массив URL для запроса (абсолютные)
+ * @param {string|Object} arg2 - Токен (строка) или объект конфигурации {token, retries, retryDelayMs, timeoutMs, proxyUrl, alternateUrl}
+ * @param {number} arg3 - maxRetries (для обратной совместимости)
+ * @param {number} arg4 - baseDelay (для обратной совместимости)
+ * @returns {Promise<Array>} Массив результатов запросов в том же порядке
+ */
+export async function fetchJsonBatch(urls, arg2 = {}, arg3 = undefined, arg4 = undefined) {
+  // Парсим параметры как в fetchJson
+  let token;
+  let maxRetries = DEFAULT_MAX_RETRIES;
+  let baseDelay = DEFAULT_BASE_DELAY;
+  let timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  let proxyUrl = null;
+
+  if (typeof arg2 === 'string') {
+    token = arg2;
+    if (Number.isInteger(arg3)) maxRetries = arg3;
+    if (Number.isInteger(arg4)) baseDelay = arg4;
+  } else if (typeof arg2 === 'object' && arg2 !== null) {
+    token = arg2.token || arg2.auth || arg2.bearer;
+    if (Number.isInteger(arg2.retries)) maxRetries = arg2.retries;
+    if (Number.isInteger(arg2.retryDelayMs)) baseDelay = arg2.retryDelayMs;
+    if (Number.isInteger(arg2.timeoutMs)) timeoutMs = arg2.timeoutMs;
+    if (typeof arg2.proxyUrl === 'string') proxyUrl = arg2.proxyUrl;
+    if (typeof arg2.proxy === 'string' && !proxyUrl) proxyUrl = arg2.proxy;
+  }
+
+  if (!proxyUrl) {
+    proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || null;
+  }
+
+  // Валидируем параметры
+  maxRetries = Math.max(0, Number.isInteger(maxRetries) ? maxRetries : DEFAULT_MAX_RETRIES);
+  baseDelay = Math.max(0, Number.isInteger(baseDelay) ? baseDelay : DEFAULT_BASE_DELAY);
+  timeoutMs = Math.max(1, Number.isInteger(timeoutMs) ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS);
+
+  // Валидируем URLs
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return [];
+  }
+
+  const validUrls = urls.filter(url => typeof url === 'string' && url.length > 0);
+  if (validUrls.length === 0) {
+    return [];
+  }
+
+  // Разбиваем на чанки по 10 (максимум батч-операций)
+  const chunks = [];
+  for (let i = 0; i < validUrls.length; i += 10) {
+    chunks.push(validUrls.slice(i, i + 10));
+  }
+
+  const allResults = [];
+
+  // Отправляем каждый чанк отдельным батч-запросом
+  for (const chunk of chunks) {
+    // Извлекаем путь и параметры из полного URL
+    const batchOps = chunk.map(fullUrl => {
+      try {
+        const parsed = new URL(fullUrl);
+        const uri = parsed.pathname + parsed.search; // /path?params
+        return { method: 'GET', uri };
+      } catch {
+        return null;
+      }
+    }).filter(op => op !== null);
+
+    if (batchOps.length === 0) {
+      continue;
+    }
+
+    try {
+      let batchResponse = null;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          await checkAndPauseIfRateLimitApproaching();
+          incrementRequestCounter();
+          const batchUrl = 'https://prod-api.lzt.market/batch';
+          batchResponse = await makeBatchHttpRequest(batchUrl, batchOps, token, timeoutMs, proxyUrl);
+          break;
+        } catch (error) {
+          const isLastAttempt = attempt >= maxRetries;
+          if (!isLastAttempt) {
+            const wait = baseDelay * Math.pow(2, attempt);
+            logInfo(`Ошибка батч-запроса (${attempt + 1}/${maxRetries}). Повтор через ${wait} мс: ${error?.message || String(error)}`);
+            await delay(wait);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (Array.isArray(batchResponse) && batchResponse.length > 0) {
+        allResults.push(...batchResponse);
+      }
+
+      logInfo(`Батч-запрос: отправлено ${batchOps.length} операций, получено ${batchResponse?.length || 0} результатов`);
+    } catch (error) {
+      logError(`Ошибка батч-запроса: ${error?.message || String(error)}`);
+      throw error;
+    }
+  }
+
+  return allResults;
+}
+
+/**
+ * Выполняет HTTP батч-запрос через встроенный https модуль
+ * @private
+ * @param {string} url - URL батч-эндпоинта
+ * @param {Array} operations - Массив операций {method, uri}
+ * @param {string} token - JWT токен
+ * @param {number} timeoutMs - Таймаут
+ * @param {string} proxyUrl - URL прокси
+ * @returns {Promise<Array>} Результаты операций
+ */
+async function makeBatchHttpRequest(url, operations, token, timeoutMs, proxyUrl) {
+  return new Promise(async (resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const defaultPort = isHttps ? 443 : 80;
+    const body = JSON.stringify(operations);
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || defaultPort,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Length': globalThis.Buffer.byteLength(body)
+      },
+      timeout: timeoutMs,
+      agent: isHttps ? GLOBAL_HTTPS_AGENT : null
+    };
+
+    if (token) {
+      options.headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Применяем прокси если задан
+    if (proxyUrl) {
+      try {
+        const agent = await createProxyAgent(proxyUrl);
+        if (agent) options.agent = agent;
+      } catch (proxyError) {
+        reject(proxyError);
+        return;
+      }
+    }
+
+    const protocol = isHttps ? https : http;
+    let data = '';
+
+    const req = protocol.request(options, (res) => {
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          if (res.statusCode === 429) {
+            reject(new Error('rate_limit'));
+            return;
+          }
+
+          if (res.statusCode >= 500 && res.statusCode < 600) {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
+
+          if (res.statusCode < 200 || res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
+
+          const result = JSON.parse(data);
+          resolve(Array.isArray(result) ? result : []);
+        } catch (error) {
+          reject(new Error(`Неверный JSON ответ батча: ${error.message}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    req.write(body);
+    req.end();
   });
 }

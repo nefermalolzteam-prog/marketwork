@@ -39,7 +39,7 @@ export async function exportToExcel(results, filePath = `results_${Date.now()}.x
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'LZT Market Bot';
   workbook.created = new Date();
-  const worksheet = workbook.addWorksheet('Нарушения');
+  const worksheet = workbook.addWorksheet('Результаты');
 
   worksheet.columns = [
     { header: 'ID', key: 'id', width: 12 },
@@ -49,6 +49,17 @@ export async function exportToExcel(results, filePath = `results_${Date.now()}.x
     { header: 'Нарушения', key: 'violations', width: 40 },
     { header: 'URL', key: 'url', width: 60 }
   ];
+
+  const searchDate = options.searchDate || new Date().toLocaleString();
+
+  if (options.mode || options.modeLabel || options.modeNumber) {
+    const modeValue = options.modeLabel
+      ? `${options.modeLabel}${options.modeNumber ? ` (${options.modeNumber})` : ''}`
+      : options.mode || '';
+    worksheet.insertRow(1, ['Режим поиска', modeValue]);
+    worksheet.insertRow(2, ['Дата поиска', searchDate]);
+    worksheet.insertRow(3, []);
+  }
 
   try {
     results.forEach((item) => {
@@ -61,6 +72,21 @@ export async function exportToExcel(results, filePath = `results_${Date.now()}.x
           ? item.violations.map((v) => v.name || v.keyword || v).join('; ')
           : String(item.violations || ''),
         url: item.url || ''
+      });
+    });
+
+    worksheet.columns.forEach((column) => {
+      let maxLength = 12;
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const value = cell.value ? String(cell.value) : '';
+        maxLength = Math.max(maxLength, value.length + 6);
+      });
+      column.width = Math.min(maxLength, 100);
+    });
+
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
       });
     });
 

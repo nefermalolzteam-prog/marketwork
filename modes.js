@@ -1,4 +1,4 @@
-import { collectPages, collectPhraseSearches, mergeResults, normalizeText, getOrderByName } from './search.js';
+import { collectPages, collectPagesBatch, collectPhraseSearches, mergeResults, normalizeText, getOrderByName, updateRuntimePartialResults } from './search.js';
 import { displayViolationsOnly } from './display.js';
 import { logError } from './logger.js';
 import { setTimeout as delay } from 'timers/promises';
@@ -37,6 +37,10 @@ function parseOriginInput(input) {
 function getConfiguredNumber(value, defaultValue) {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : defaultValue;
+}
+
+function getCollectPagesFunc(config) {
+  return config.useBatch ? collectPagesBatch : collectPages;
 }
 
 /**
@@ -160,7 +164,7 @@ async function processItemsInBatches(items, maxConcurrent, taskFn, runtimeState)
 export async function searchByKeywords(config, rules) {
   try {
     logModeHeader('🔍 Режим поиска по ключевым словам', null, config, [`Ключевые слова: ${Array.isArray(config.keywords) ? config.keywords.join(', ') : config.keywords}`, `Категория: ${config.category || 'все'}`]);
-    const results = await collectPages(config, rules, 'Поиск');
+    const results = await getCollectPagesFunc(config)(config, rules, 'Поиск');
     console.log(`\n📊 Всего найдено объявлений: ${Array.isArray(results) ? results.length : 0}`);
     return Array.isArray(results) ? results : [];
   } catch (err) {
@@ -188,7 +192,7 @@ export async function searchFakePersonal(config, rules) {
       keywords: ['личный'],
       excludeOrigins: ['personal']
     };
-    const pageResults = await collectPages(categoryConfig, rules, `Поиск личного в ${catName}`);
+    const pageResults = await getCollectPagesFunc(categoryConfig)(categoryConfig, rules, `Поиск личного в ${catName}`);
     const titleMatched = pageResults.filter(item => {
       const normalizedTitle = normalizeText(item.title);
       if (!normalizedTitle.includes('личный')) return false;
@@ -237,7 +241,7 @@ export async function checkAllOrigins(config, rules) {
         keywords: originInfo.searchTerms,
         excludeOrigins: [origin]
       };
-      const pageResults = await collectPages(categoryConfig, rules, `Проверка ${originInfo.name} в ${catName}`);
+      const pageResults = await getCollectPagesFunc(categoryConfig)(categoryConfig, rules, `Проверка ${originInfo.name} в ${catName}`);
       return pageResults.map(item => {
         const normalizedTitle = normalizeText(item.title);
         const matchedKeywords = originInfo.searchTerms.filter(term => normalizedTitle.includes(normalizeText(term)));
@@ -267,7 +271,7 @@ export async function searchTelegramOtlegYears(config, rules) {
     logModeHeader('🔍 Режим поиска по годам отлеги в Telegram', null, config, [`Категория: Telegram (${TELEGRAM_CATEGORY_ID})`, `Поисковые фразы: ${queries.length}`]);
     const results = await collectPhraseSearches({ ...config, category: TELEGRAM_CATEGORY_ID, maxPages: getMaxPages(config) }, rules, queries, 'Отлеги Telegram');
     const filteredResults = Array.isArray(results) ? results.filter(item => !item.hasExplicitAccountAgeOrRegistration) : [];
-    if (config.runtimeState) config.runtimeState.partialResults = filteredResults;
+    if (config.runtimeState) updateRuntimePartialResults(config.runtimeState, filteredResults);
     console.log(`\n📊 Всего найдено объявлений: ${filteredResults.length}`);
     return filteredResults;
   } catch (err) {
@@ -296,7 +300,7 @@ export async function searchSocialClubAccounts(config, rules) {
       console.log(`\n📂 Поиск в категории ${catName} (${category})...`);
       const results = await collectPhraseSearches({ ...config, category, maxPages: getMaxPages(config) }, rules, queries, `Поиск Social Club в ${catName}`);
       allResults = mergeResults(allResults, Array.isArray(results) ? results.map(item => ({ ...item, category: catName })) : []);
-      if (config.runtimeState) config.runtimeState.partialResults = allResults;
+      if (config.runtimeState) updateRuntimePartialResults(config.runtimeState, allResults);
     }
     console.log(`\n📊 Всего найдено объявлений: ${allResults.length}`);
     return allResults;
@@ -333,7 +337,7 @@ export async function checkAllCategories(config, rules, ask) {
       totalResults = mergeResults(totalResults, resultsWithCategory);
       totalChecked += checkedCount;
       if (config.runtimeState) {
-        config.runtimeState.partialResults = totalResults;
+        updateRuntimePartialResults(config.runtimeState, totalResults);
       }
     } catch (error) {
       console.error(`   ❌ Ошибка: ${error.message}`);
@@ -367,7 +371,7 @@ export async function autoCheckAllListings(config, rules) {
       console.log(`Задержка между страницами: ${getPageDelay(config)} мс\n`);
     }
 
-    const results = await collectPages(
+    const results = await getCollectPagesFunc(config)(
       { ...config, keywords: '' },
       rules,
       'Проверка',

@@ -202,6 +202,13 @@ function validateConfig(config) {
     config.deduplicateResults = false;
   }
 
+  if (config.useBatch !== undefined && typeof config.useBatch !== 'boolean') {
+    throw new Error('Ошибка: useBatch должен быть boolean (true/false).');
+  }
+  if (config.useBatch === undefined) {
+    config.useBatch = false;
+  }
+
   if (config.maxConcurrentRequests !== undefined) {
     if (!Number.isInteger(config.maxConcurrentRequests) || config.maxConcurrentRequests <= 0 || config.maxConcurrentRequests > MAX_CONCURRENT_REQUESTS_LIMIT) {
       throw new Error(`Ошибка: maxConcurrentRequests должен быть числом от 1 до ${MAX_CONCURRENT_REQUESTS_LIMIT}.`);
@@ -246,7 +253,7 @@ function loadRules() {
 }
 
 function setupGracefulShutdown(runtimeState) {
-  process.on('SIGINT', () => {
+  process.on('SIGINT', async () => {
     runtimeState.isInterrupted = true;
     console.log('\n\n⚠️  Получен сигнал прерывания (Ctrl+C)...');
     console.log('📊 Выведу результаты, которые уже найдены...\n');
@@ -254,11 +261,16 @@ function setupGracefulShutdown(runtimeState) {
     const interruptedResults = runtimeState.partialResults || [];
     const resultsToShow = currentResults.length > 0 ? currentResults : interruptedResults;
     if (resultsToShow.length > 0) {
-      if (['telegram-years', 'fake-personal', 'check-origins', 'socialclub-search'].includes(currentMode)) {
-        displayResults(resultsToShow, 1000, null, { mode: currentMode });
-      } else {
-        displayViolationsOnly(resultsToShow, 1000, null, { mode: currentMode });
+      try {
+        if (['telegram-years', 'fake-personal', 'check-origins', 'socialclub-search'].includes(currentMode)) {
+          await displayResults(resultsToShow, 1000, null, { mode: currentMode });
+        } else {
+          await displayViolationsOnly(resultsToShow, 1000, null, { mode: currentMode });
+        }
+      } catch (displayError) {
+        console.error('Ошибка при выводе результатов после прерывания:', displayError && displayError.message ? displayError.message : displayError);
       }
+
       const totalViolations = resultsToShow.reduce((sum, item) => sum + (Array.isArray(item.violations) ? item.violations.length : 0), 0);
       const endTime = Date.now();
       const duration = (endTime - startTime) / 1000;
@@ -393,6 +405,17 @@ async function runBot() {
         excludeOrigins = originFilters.excludeOrigins;
       }
 
+      let useBatch = Boolean(config.useBatch);
+      const batchSupportedModes = ['search', 'auto-check', 'check-categories', 'check-origins', 'fake-personal', 'telegram-years', 'socialclub-search'];
+      if (batchSupportedModes.includes(mode)) {
+        const defaultBatchLabel = useBatch ? 'yes' : 'no';
+        const batchInput = await ask(`Использовать batch API для запросов страниц? (yes/no, Enter = ${defaultBatchLabel}): `);
+        const batchChoice = batchInput.trim().toLowerCase();
+        if (batchChoice) {
+          useBatch = ['yes', 'y', 'да', 'д'].includes(batchChoice);
+        }
+      }
+
       let maxPages;
       if (['fake-personal', 'telegram-years', 'socialclub-search', 'check-origins'].includes(mode)) {
         maxPages = 1;
@@ -424,6 +447,7 @@ async function runBot() {
         excludeOrigins,
         maxPages,
         resultsPerPage,
+        useBatch,
         runtimeState
       };
       currentMode = mode;
@@ -458,7 +482,8 @@ async function runBot() {
         console.log(`Фильтр not_origin[]: ${excludeOrigins.join(', ')}`);
       }
       console.log(`Максимум страниц: ${maxPages}`);
-      console.log(`Результатов на страницу: ${resultsPerPage}\n`);
+      console.log(`Результатов на страницу: ${resultsPerPage}`);
+      console.log(`Batch API: ${useBatch ? 'включен' : 'выключен'}\n`);
 
       const modeHandlers = {
         'check-categories': async () => {
@@ -496,6 +521,8 @@ async function runBot() {
           await displayResults(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
         } else if (mode === 'check-categories') {
           // Режим проверки категорий уже выводит результаты внутри своей функции.
+        } else if (['socialclub-search', 'telegram-years', 'fake-personal'].includes(mode)) {
+          await displayResults(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
         } else {
           await displayViolationsOnly(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
         }
@@ -515,10 +542,25 @@ async function runBot() {
         }
 
         if (results.length > 0) {
-          const exportChoice = await ask('Экспортировать результаты? (excel/no): ');
+          const exportChoice = await ask('Экспорт результатов доступен в Excel. Экспортировать? (yes/no): ');
           const exportType = exportChoice.toLowerCase();
           if (['excel', 'yes', 'y', 'да', 'д'].includes(exportType)) {
-            await exportToExcel(results, `results_${Date.now()}.xlsx`);
+            const exportDateLabel = new Date().toLocaleString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+            const safeDateForName = exportDateLabel.replace(/[: ]/g, '-').replace(/,/g, '');
+            const exportFileName = `result-${modeChoice}-${safeDateForName}.xlsx`;
+            await exportToExcel(results, exportFileName, {
+              mode,
+              modeLabel: modeMetadata[mode]?.label || '',
+              modeNumber: modeChoice,
+              searchDate: exportDateLabel
+            });
           }
         }
       } catch (error) {

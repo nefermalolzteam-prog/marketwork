@@ -1,4 +1,4 @@
-import { buildSearchUrl, fetchJson, isParallelMode } from './api.js';
+import { buildSearchUrl, fetchJson, fetchJsonBatch, isParallelMode } from './api.js';
 import { setTimeout as delay } from 'timers/promises';
 import { DEFAULT_CONFIG } from './constants.js';
 
@@ -258,9 +258,14 @@ export async function searchOnce(config, rules, page = 1) {
   return { results: parsed, rawCount: items.length };
 }
 
-function updateRuntimePartialResults(runtimeState, results, selector) {
+export function updateRuntimePartialResults(runtimeState, results, selector) {
   if (!runtimeState) return;
-  runtimeState.partialResults = typeof selector === 'function' ? selector(results) : results;
+  const newResults = typeof selector === 'function' ? selector(results) : results;
+  if (!Array.isArray(newResults)) return;
+
+  if (newResults.length > 0 || !Array.isArray(runtimeState.partialResults) || runtimeState.partialResults.length === 0) {
+    runtimeState.partialResults = newResults;
+  }
 }
 
 export async function fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent = 3, partialResultSelector = null) {
@@ -392,6 +397,143 @@ export async function collectPages(config, rules, itemLabel = 'Поиск', part
   return allResults;
 }
 
+/**
+ * Собирает страницы результатов поиска используя батч API (макс 10 операций за раз)
+ * Полезно для обхода лимитов запросов
+ */
+export async function collectPagesBatch(config, rules, itemLabel = 'Поиск', partialResultSelector = null) {
+  let allResults = [];
+  updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
+  const maxPages = normalizePositiveInteger(config.maxPages, 1);
+  const pageDelayMs = normalizePositiveInteger(config.pageDelayMs, 1000);
+
+  console.log(`\n🔎 ${itemLabel}: страницы 1..${maxPages} (батч режим)`);
+
+  let retryCount = 0;
+  const maxRetries = 2;
+
+  for (let batch = 0; batch < maxPages && !config.runtimeState?.isInterrupted; batch += 10) {
+    const batchStart = batch + 1;
+    const batchEnd = Math.min(batch + 10, maxPages);
+    const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
+
+    try {
+      console.log(`📦 Батч-запрос страниц ${batchStart}..${batchEnd}...`);
+
+      // Строим URL для каждой страницы в батче
+      const urls = batchPages.map(page => buildSearchUrl(config, page));
+
+      // Отправляем батч
+      const batchResults = await fetchJsonBatch(urls, {
+        token: config.token,
+        retries: config.maxRetries,
+        retryDelayMs: config.retryDelayMs,
+        timeoutMs: config.timeoutMs,
+        proxyUrl: config.proxyUrl,
+        alternateUrl: config.apiAlternateUrl
+      });
+
+      // Обрабатываем результаты батча
+      const batchItems = [];
+
+      for (let i = 0; i < batchResults.length; i++) {
+        const result = batchResults[i];
+        const pageNum = batchPages[i];
+
+        if (!result) {
+          console.log(`   ⚠️  Страница ${pageNum}: пуста`);
+          continue;
+        }
+
+        // Парсим результаты страницы
+        const { results, rawCount } = parseSearchResponse(result, config, rules);
+        console.log(`   ✅ Страница ${pageNum}: ${results.length} объявлений`);
+        batchItems.push(...results);
+
+        // Если одна из страниц пуста, останавливаемся
+        if (rawCount === 0) {
+          console.log(`   Страница ${pageNum} пуста, остановка.`);
+          batch = maxPages; // выход из внешнего цикла
+          break;
+        }
+      }
+
+      allResults.push(...batchItems);
+      updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
+      retryCount = 0;
+
+      console.log(`   ✅ Батч завершен: ${batchItems.length} объявлений`);
+
+      if (batchEnd < maxPages && !config.runtimeState?.isInterrupted) {
+        await delay(pageDelayMs);
+      }
+    } catch (error) {
+      if (error.message === 'rate_limit') {
+        if (retryCount < maxRetries) {
+          retryCount += 1;
+          console.warn(`⚠️  Лимит запросов 429, повтор батча ${retryCount}/${maxRetries} после 10 сек...`);
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          batch -= 10; // повторяем батч
+          continue;
+        }
+        console.error('❌ Превышено максимальное количество повторов при лимите запросов.');
+        break;
+      }
+      console.error(`❌ Ошибка батч-запроса:`, error.message);
+      break;
+    }
+  }
+
+  if (config.deduplicateResults) {
+    const uniqueResults = uniqItemsById(allResults);
+    console.log(`\n✅ Батч обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
+    allResults = uniqueResults;
+    updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
+  } else {
+    console.log(`\n✅ Батч обработка завершена: ${allResults.length} объявлений`);
+  }
+
+  return allResults;
+}
+
+/**
+ * Парсит один результат из батча (может быть уже парсенный JSON)
+ * @private
+ */
+function parseSearchResponse(response, config, rules) {
+  if (!response) return { results: [], rawCount: 0 };
+
+  // Если батч возвращает обёртку вида { status, body }
+  if (typeof response === 'object' && response !== null && typeof response.status === 'number') {
+    if (response.status !== 200) {
+      return { results: [], rawCount: 0 };
+    }
+    let inner = response.body ?? response.result ?? response.data ?? response;
+    if (typeof inner === 'string') {
+      try {
+        inner = JSON.parse(inner);
+      } catch {
+        return { results: [], rawCount: 0 };
+      }
+    }
+    return parseSearchResponse(inner, config, rules);
+  }
+
+  // Если это прямой результат от API
+  if (response.data && Array.isArray(response.data)) {
+    const results = response.data.map(item => ({
+      ...item,
+      violations: checkViolations(item.title || '', rules)
+    }));
+    return {
+      results,
+      rawCount: response.total_count || response.data.length
+    };
+  }
+
+  // Если это уже обработанный результат
+  return { results: [], rawCount: 0 };
+}
 const OTLEG_BASE_TERMS = ['отлега', 'отлёга', 'отлежка', 'отлёжка', 'inactive'];
 const OTLEG_YEAR_SUFFIXES = ['13 лет', '12 лет', '11 лет', '10 лет', '9 лет', '8 лет', '7 лет', '6 лет', '5 лет', '4 года', '3 года', '2 года'];
 const OTLEG_YEAR_QUERIES = OTLEG_BASE_TERMS.flatMap((term) => OTLEG_YEAR_SUFFIXES.map((suffix) => `${term} ${suffix}`));
@@ -403,16 +545,16 @@ export function buildOtlegYearQueries() {
 export async function collectPhraseSearches(config, rules, phrases, itemLabel = 'Поиск') {
   let allResults = [];
   if (config.runtimeState) {
-    config.runtimeState.partialResults = allResults;
+    updateRuntimePartialResults(config.runtimeState, allResults);
   }
   for (const phrase of phrases) {
     if (config.runtimeState?.isInterrupted) break;
     const phraseConfig = { ...config, keywords: [phrase] };
     console.log(`\n🔎 Поиск фразы: ${phrase}`);
-    const results = await collectPages(phraseConfig, rules, itemLabel);
+    const results = await (config.useBatch ? collectPagesBatch : collectPages)(phraseConfig, rules, itemLabel);
     allResults = mergeResults(allResults, results);
     if (config.runtimeState) {
-      config.runtimeState.partialResults = allResults;
+      updateRuntimePartialResults(config.runtimeState, allResults);
     }
   }
 

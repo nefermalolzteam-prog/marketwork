@@ -1,7 +1,8 @@
 // === Конфигурация параллельной обработки ===
 export const DEFAULT_CONFIG = {
   parallelProcessing: false,
-  maxConcurrentRequests: 4
+  maxConcurrentRequests: 4,
+  useBatch: false
 };
 
 // === Значения по умолчанию для параметров ===
