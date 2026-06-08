@@ -569,12 +569,24 @@ export async function fetchJsonBatch(urls, arg2 = {}, arg3 = undefined, arg4 = u
     }
 
     try {
+      let batchUrl = null;
       let batchResponse = null;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           await checkAndPauseIfRateLimitApproaching();
           incrementRequestCounter();
-          const batchUrl = 'https://prod-api.lzt.market/batch';
+          // Выбираем базовый хост и префикс для батч-эндпоинта на основе первого URL в чанке
+          const firstFull = chunk[0];
+          batchUrl = 'https://prod-api.lzt.market/batch';
+          try {
+            const p = new URL(firstFull);
+            // Сохраняем префикс пути (например /api/v1) и заменяем последний сегмент на /batch
+            const pathname = p.pathname || '/';
+            const batchPath = pathname.replace(/\/?[^/]*$/, '/batch');
+            batchUrl = `${p.protocol}//${p.hostname}${p.port ? `:${p.port}` : ''}${batchPath}`;
+          } catch {
+            // fallback к prod-api
+          }
           batchResponse = await makeBatchHttpRequest(batchUrl, batchOps, token, timeoutMs, proxyUrl);
           break;
         } catch (error) {
@@ -590,7 +602,33 @@ export async function fetchJsonBatch(urls, arg2 = {}, arg3 = undefined, arg4 = u
       }
 
       if (Array.isArray(batchResponse) && batchResponse.length > 0) {
+        // Debug: покажем пример первого элемента батча, чтобы понять формат
+        try {
+          const sample = batchResponse[0];
+          console.log('DEBUG batch sample keys:', Array.isArray(batchResponse) ? (sample && typeof sample === 'object' ? Object.keys(sample) : typeof sample) : null);
+        } catch (e) {
+          // ignore
+        }
         allResults.push(...batchResponse);
+      }
+
+      // Если батч вернул пустой или null ответ — попробуем повторно с полем `url` (полный абсолютный URL)
+      if ((!Array.isArray(batchResponse) || batchResponse.length === 0) && batchOps.length > 0) {
+        try {
+          const altOps = chunk.map(fullUrl => ({ method: 'GET', url: fullUrl }));
+          console.log('DEBUG: retrying batch using full `url` fields...');
+          await checkAndPauseIfRateLimitApproaching();
+          incrementRequestCounter();
+          const altResponse = await makeBatchHttpRequest(batchUrl, altOps, token, timeoutMs, proxyUrl);
+          if (Array.isArray(altResponse) && altResponse.length > 0) {
+            try { console.log('DEBUG batch (url) sample keys:', altResponse[0] && typeof altResponse[0] === 'object' ? Object.keys(altResponse[0]) : typeof altResponse[0]); } catch {}
+            allResults.push(...altResponse);
+            batchResponse = altResponse;
+          }
+        } catch (err) {
+          // игнорируем — у нас есть фоллбек в search.js для индивидуальных запросов
+          logInfo(`Повтор батча с url не удался: ${err?.message || err}`);
+        }
       }
 
       logInfo(`Батч-запрос: отправлено ${batchOps.length} операций, получено ${batchResponse?.length || 0} результатов`);

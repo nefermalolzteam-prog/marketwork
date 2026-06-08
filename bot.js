@@ -448,6 +448,7 @@ async function runBot() {
         maxPages,
         resultsPerPage,
         useBatch,
+        deduplicateResults: false,
         runtimeState
       };
       currentMode = mode;
@@ -521,7 +522,7 @@ async function runBot() {
           await displayResults(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
         } else if (mode === 'check-categories') {
           // Режим проверки категорий уже выводит результаты внутри своей функции.
-        } else if (['socialclub-search', 'telegram-years', 'fake-personal'].includes(mode)) {
+        } else if (['socialclub-search', 'telegram-years', 'fake-personal', 'check-origins'].includes(mode)) {
           await displayResults(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });
         } else {
           await displayViolationsOnly(currentResults, searchConfig.resultsPerPage || 1000, ask, { mode });

@@ -11,7 +11,37 @@ export function isAsciiString(value) {
 }
 
 export function getItemId(item) {
-  return item?.item_id ?? item?.id ?? item?.uid;
+  if (!item) return null;
+  const candidates = [
+    item.item_id,
+    item.id,
+    item.uid,
+    item.uid_str,
+    item._id,
+    item.uuid,
+    item.sid,
+    item.seller_item_id,
+    item.id_str
+  ];
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && String(c).trim() !== '') {
+      return String(c);
+    }
+  }
+
+  // Fallback: generate stable synthetic id from title, seller, url and other available fields
+  try {
+    const title = String(item.title || item.name || item.desc || item.description || '');
+    const seller = String((item.seller && (item.seller.username || item.seller_login)) || item.seller_login || item.seller || item.login || '');
+    const url = String(item.url || item.link || item.permalink || item.href || '');
+    const description = String(item.description || item.desc || item.text || '');
+    const category = String(item.category_id || item.category || '');
+    const seed = `${title}|${seller}|${url}|${description}|${category}`;
+    const b64 = globalThis.Buffer.from(seed).toString('base64');
+    return `gen_${b64.slice(0, 16)}`;
+  } catch {
+    return null;
+  }
 }
 
 export function mergeResults(existing, newResults) {
@@ -335,14 +365,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск', part
     const pageResults = await fetchWithConcurrencyLimit(pages, config, rules, maxConcurrent, partialResultSelector);
     allResults = pageResults;
     updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
-    if (config.deduplicateResults) {
-      const uniqueResults = uniqItemsById(allResults);
-      console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
-      allResults = uniqueResults;
-      updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
-    } else {
-      console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
-    }
+    console.log(`\n✅ Параллельная обработка завершена: ${allResults.length} объявлений`);
   } else {
     let retryCount = 0;
     const maxRetries = 2;
@@ -386,12 +409,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск', part
       }
     }
 
-    if (config.deduplicateResults) {
-      const uniqueResults = uniqItemsById(allResults);
-      console.log(`\n✅ Последовательная обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
-      allResults = uniqueResults;
-      updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
-    }
+    console.log(`\n✅ Последовательная обработка завершена: ${allResults.length} объявлений`);
   }
 
   return allResults;
@@ -434,7 +452,7 @@ export async function collectPagesBatch(config, rules, itemLabel = 'Поиск',
       });
 
       // Обрабатываем результаты батча
-      const batchItems = [];
+      let batchItems = [];
 
       for (let i = 0; i < batchResults.length; i++) {
         const result = batchResults[i];
@@ -455,6 +473,28 @@ export async function collectPagesBatch(config, rules, itemLabel = 'Поиск',
           console.log(`   Страница ${pageNum} пуста, остановка.`);
           batch = maxPages; // выход из внешнего цикла
           break;
+        }
+      }
+
+      // Фоллбек: если батч-эндпоинт вернул пустые результаты, попробуем запустить по-отдельности
+      if (batchItems.length === 0) {
+        try {
+          console.log('   ⚠️  Батч-эндпоинт вернул пустые результаты — пробуем параллельные индивидуальные запросы...');
+          const fetchPromises = batchPages.map((p) => searchOnce(config, rules, p).catch(err => ({ results: [], rawCount: 0 })));
+          const manualResults = await Promise.all(fetchPromises);
+          for (let i = 0; i < manualResults.length; i++) {
+            const pageNum = batchPages[i];
+            const pr = manualResults[i];
+            console.log(`   ✅ (fallback) Страница ${pageNum}: ${Array.isArray(pr.results) ? pr.results.length : 0} объявлений`);
+            batchItems.push(...(pr.results || []));
+            if (pr.rawCount === 0) {
+              console.log(`   (fallback) Страница ${pageNum} пуста, остановка.`);
+              batch = maxPages;
+              break;
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn('   ⚠️  Фоллбек батча завершился ошибкой:', fallbackErr && fallbackErr.message ? fallbackErr.message : fallbackErr);
         }
       }
 
@@ -484,14 +524,7 @@ export async function collectPagesBatch(config, rules, itemLabel = 'Поиск',
     }
   }
 
-  if (config.deduplicateResults) {
-    const uniqueResults = uniqItemsById(allResults);
-    console.log(`\n✅ Батч обработка завершена: ${allResults.length} объявлений (${uniqueResults.length} уникальных)`);
-    allResults = uniqueResults;
-    updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
-  } else {
-    console.log(`\n✅ Батч обработка завершена: ${allResults.length} объявлений`);
-  }
+  console.log(`\n✅ Батч обработка завершена: ${allResults.length} объявлений`);
 
   return allResults;
 }
@@ -519,19 +552,26 @@ function parseSearchResponse(response, config, rules) {
     return parseSearchResponse(inner, config, rules);
   }
 
-  // Если это прямой результат от API
-  if (response.data && Array.isArray(response.data)) {
-    const results = response.data.map(item => ({
-      ...item,
-      violations: checkViolations(item.title || '', rules)
-    }));
-    return {
-      results,
-      rawCount: response.total_count || response.data.length
-    };
+  // Поддерживаем несколько вариантов формата ответа: data, items, list, или прямой массив
+  const possibleItems = response?.data ?? response?.items ?? response?.list ?? (Array.isArray(response) ? response : null);
+  if (Array.isArray(possibleItems)) {
+    const results = possibleItems.map(item => formatItem(item, rules));
+    const rawCount = Number(response?.total_count ?? response?.totalCount ?? possibleItems.length) || possibleItems.length;
+    return { results, rawCount };
   }
 
-  // Если это уже обработанный результат
+  // Если внутри есть поле data, но оно не массив — попытаемся найти вложенные массивы
+  if (response && typeof response === 'object') {
+    for (const key of ['items', 'list', 'data']) {
+      if (Array.isArray(response[key])) {
+        const results = response[key].map(item => formatItem(item, rules));
+        const rawCount = Number(response.total_count ?? response.totalCount ?? response[key].length) || response[key].length;
+        return { results, rawCount };
+      }
+    }
+  }
+
+  // Не распознано — возвращаем пустой результат
   return { results: [], rawCount: 0 };
 }
 const OTLEG_BASE_TERMS = ['отлега', 'отлёга', 'отлежка', 'отлёжка', 'inactive'];
@@ -558,10 +598,7 @@ export async function collectPhraseSearches(config, rules, phrases, itemLabel = 
     }
   }
 
-  if (config.deduplicateResults) {
-    allResults = uniqItemsById(allResults);
-    console.log(`\n✅ Объединение фраз завершено: ${allResults.length} уникальных объявлений.`);
-  }
+  console.log(`\n✅ Объединение фраз завершено: ${allResults.length} объявлений.`);
 
   return allResults;
 }

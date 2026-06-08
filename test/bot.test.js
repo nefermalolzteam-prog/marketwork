@@ -35,6 +35,12 @@ function run() {
     { item_id: '2', title: 'b' }
   ]);
 
+  assert.deepStrictEqual(uniqItemsById([
+    { title: 'same', seller_login: 'u1' },
+    { title: 'same', seller_login: 'u1' },
+    { title: 'same', seller_login: 'u1', url: 'https://example.com/1' }
+  ]).length, 2, 'Должен считать разные URL-объявления уникальными даже без item_id');
+
   validateConfig({
     token: 'abc',
     apiBaseUrl: 'https://prod-api.lzt.market',
