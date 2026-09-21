@@ -420,7 +420,7 @@ export async function collectPages(config, rules, itemLabel = 'Поиск', part
  * Полезно для обхода лимитов запросов
  */
 export async function collectPagesBatch(config, rules, itemLabel = 'Поиск', partialResultSelector = null) {
-  let allResults = [];
+  const allResults = [];
   updateRuntimePartialResults(config.runtimeState, allResults, partialResultSelector);
   const maxPages = normalizePositiveInteger(config.maxPages, 1);
   const pageDelayMs = normalizePositiveInteger(config.pageDelayMs, 1000);
@@ -452,7 +452,7 @@ export async function collectPagesBatch(config, rules, itemLabel = 'Поиск',
       });
 
       // Обрабатываем результаты батча
-      let batchItems = [];
+      const batchItems = [];
 
       for (let i = 0; i < batchResults.length; i++) {
         const result = batchResults[i];
@@ -480,7 +480,7 @@ export async function collectPagesBatch(config, rules, itemLabel = 'Поиск',
       if (batchItems.length === 0) {
         try {
           console.log('   ⚠️  Батч-эндпоинт вернул пустые результаты — пробуем параллельные индивидуальные запросы...');
-          const fetchPromises = batchPages.map((p) => searchOnce(config, rules, p).catch(err => ({ results: [], rawCount: 0 })));
+          const fetchPromises = batchPages.map((p) => searchOnce(config, rules, p).catch(() => ({ results: [], rawCount: 0 })));
           const manualResults = await Promise.all(fetchPromises);
           for (let i = 0; i < manualResults.length; i++) {
             const pageNum = batchPages[i];

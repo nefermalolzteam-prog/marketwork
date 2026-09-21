@@ -606,7 +606,7 @@ export async function fetchJsonBatch(urls, arg2 = {}, arg3 = undefined, arg4 = u
         try {
           const sample = batchResponse[0];
           console.log('DEBUG batch sample keys:', Array.isArray(batchResponse) ? (sample && typeof sample === 'object' ? Object.keys(sample) : typeof sample) : null);
-        } catch (e) {
+        } catch {
           // ignore
         }
         allResults.push(...batchResponse);
