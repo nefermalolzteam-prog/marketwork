@@ -25,3 +25,7 @@ npm-debug.log*
 *.swp
 *.swo
 *~
+
+# Инструкции для ИИ — только локально, не пушим
+.github/copilot-instructions.md
+.zcodeignore
