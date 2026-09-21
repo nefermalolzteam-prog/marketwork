@@ -45,7 +45,7 @@ export async function chooseCategories(mode, cats, ask, config) {
      * Режимы с фиксированными категориями
      */
     'telegram-years': () => [TELEGRAM_CATEGORY_ID],
-    'socialclub-search': () => ['1', '12'],
+    'socialclub-search': () => ['1', '9'],
 
     /**
      * Режим поиска по словам - одна категория или все

@@ -470,7 +470,7 @@ async function runBot() {
         console.log('Категория: Telegram (24)');
         console.log('Поисковые слова: отлега, отлёга, отлежка, отлёжка, inactive + годы 13..2');
       } else if (mode === 'socialclub-search') {
-        console.log('Категории: Steam (1), Epic Games (12)');
+        console.log('Категории: Steam (1), Epic Games (9)');
         console.log('Поисковые слова: grand, rdr, gta + БЕЗ ДОСТУПА К SOCIAL CLUB');
       } else {
         const catName = categories[0] ? (cats[categories[0]] || `ID:${categories[0]}`) : 'все';

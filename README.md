@@ -71,7 +71,7 @@
 - Сортировка — новые сначала
 - Категории:
     режим 6: Telegram (24)
-    режим 7: Steam (1) и Epic Games (12)
+    режим 7: Steam (1) и Epic Games (9)
 
 ## Конфигурация
 
@@ -166,10 +166,9 @@
 | 6  | LLM |
 | 7  | Social Club |
 | 8  | Hytale |
-| 9  | Fortnite |
+| 9  | Epic Games |
 | 10 | Instagram |
 | 11 | Battle.net |
-| 12 | Epic Games |
 | 13 | Riot Games |
 | 14 | World of Tanks |
 | 15 | Supercell |

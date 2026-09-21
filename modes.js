@@ -286,10 +286,11 @@ export async function searchSocialClubAccounts(config, rules) {
     'rdr (БЕЗ ДОСТУПА К SOCIAL CLUB)',
     'gta (БЕЗ ДОСТУПА К SOCIAL CLUB)'
   ];
-  const categories = ['1', '12'];
-  const sectionNames = { '1': 'Steam', '12': 'Epic Games' };
+  // С API 1.1.103 Epic Games — категория 9 (12 больше не существует)
+  const categories = ['1', '9'];
+  const sectionNames = { '1': 'Steam', '9': 'Epic Games' };
 
-  logModeHeader('🔍 Режим поиска Social Club в Steam и Epic Games', null, config, [`Категории: Steam (1), Epic Games (12)`, `Поисковые фразы: ${queries.length}`]);
+  logModeHeader('🔍 Режим поиска Social Club в Steam и Epic Games', null, config, [`Категории: Steam (1), Epic Games (9)`, `Поисковые фразы: ${queries.length}`]);
 
   let allResults = [];
 

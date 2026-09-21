@@ -15,9 +15,18 @@
     "https://lolz.live/threads/7421809/",
     "https://lolz.live/threads/9679111/"
   ],
-  "keywords": ["отлега", "отлёга", "отлежка", "отлёжка", "inactive"],
+  "keywords": [
+    "отлега",
+    "отлёга",
+    "отлежка",
+    "отлёжка",
+    "inactive"
+  ],
   "category": "",
-  "checkCategories": ["1", "24"],
+  "checkCategories": [
+    "1",
+    "24"
+  ],
   "order_by": "pdate_to_down",
   "deduplicateResults": false,
   "_comment_deduplicateResults": "false = полный подсчет страниц, true = убрать повторы по ID между страницами",
@@ -68,10 +77,9 @@
     "6": "LLM",
     "7": "Social Club",
     "8": "Hytale",
-    "9": "Fortnite",
+    "9": "Epic Games",
     "10": "Instagram",
     "11": "Battle.net",
-    "12": "Epic Games",
     "13": "Riot Games",
     "14": "World of Tanks",
     "15": "Supercell",

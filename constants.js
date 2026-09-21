@@ -39,10 +39,12 @@ export const CATEGORY_PATHS = {
   '6': 'llm',
   '7': 'socialclub',
   '8': 'hytale',
-  '9': 'fortnite',
+  // Начиная с API 1.1.103 Fortnite объединён с Epic Games: категория 9 = epicgames,
+  // отдельного пути /fortnite больше нет.
+  '9': 'epicgames',
   '10': 'instagram',
   '11': 'battlenet',
-  '12': 'epicgames',
+  '12': 'epicgames', // устаревший ID Epic Games (до API 1.1.103), оставлен как алиас для старых конфигов
   '13': 'riot',
   '14': 'world-of-tanks',
   '15': 'supercell',

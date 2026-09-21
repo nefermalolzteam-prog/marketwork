@@ -3,7 +3,7 @@ import { chooseCategories } from '../input.js';
 import { TELEGRAM_CATEGORY_ID } from '../constants.js';
 
 async function run() {
-  const cats = { '1': 'Steam', '12': 'Epic Games', '24': 'Telegram', '2': 'Other' };
+  const cats = { '1': 'Steam', '9': 'Epic Games', '24': 'Telegram', '2': 'Other' };
 
   // Случай: telegram-years должен вернуть TELEGRAM_CATEGORY_ID
   let res = await chooseCategories('telegram-years', cats, async () => '', { category: '' });
@@ -11,7 +11,7 @@ async function run() {
 
   // Случай: socialclub-search возвращает фиксированную пару
   res = await chooseCategories('socialclub-search', cats, async () => '', { category: '' });
-  assert.deepStrictEqual(res, ['1', '12'], 'socialclub-search должен вернуть [1,12]');
+  assert.deepStrictEqual(res, ['1', '9'], 'socialclub-search должен вернуть [1,9]');
 
   // Случай: check-origins возвращает все ключи
   res = await chooseCategories('check-origins', cats, async () => '', { category: '' });
